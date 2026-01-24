@@ -5,13 +5,11 @@ import jax
 import jax.numpy as jnp
 from flax import nnx
 
-from whisper_nnx import (
+from whisper_jax import (
     create_whisper_base,
     create_whisper_small,
     create_whisper_tiny,
-    get_whisper_config,
     load_pretrained_weights,
-    print_model_info,
 )
 
 
@@ -47,8 +45,6 @@ def example_2_load_pretrained():
     print_section("EXAMPLE 2: Loading pretrained weights")
 
     model_name = "openai/whisper-tiny"
-    config = get_whisper_config(model_name)
-    print_model_info(config)
 
     # Create and load model
     model = create_whisper_tiny(rngs=nnx.Rngs(42))
@@ -135,7 +131,7 @@ def example_5_batch_processing():
 
 def main():
     """Run all examples."""
-    print_section("WHISPER NNX - EXAMPLES")
+    print_section("WHISPER JAX - EXAMPLES")
 
     examples = [
         example_1_create_model,

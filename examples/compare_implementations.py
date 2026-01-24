@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Compare NNX Whisper implementation with HuggingFace PyTorch implementation.
+Compare JAX Whisper implementation with HuggingFace PyTorch implementation.
 
 Loads pretrained weights and verifies encoder, decoder, and logits outputs match.
 """
@@ -13,12 +13,15 @@ import torch
 from flax import nnx
 from transformers import WhisperModel as HFWhisperModel
 
-from whisper_nnx import create_whisper_base, create_whisper_small, create_whisper_tiny
-from whisper_nnx.weight_loader import load_pretrained_weights
+from whisper_jax import create_whisper_base, create_whisper_small, create_whisper_tiny
+from whisper_jax.weight_loader import load_pretrained_weights
+
+# Set print options for cleaner output
+np.set_printoptions(precision=4, suppress=True, linewidth=100)
 
 
 def create_nnx_model(model_name: str):
-    """Create NNX model matching HuggingFace model name."""
+    """Create JAX model matching HuggingFace model name."""
     models = {
         "openai/whisper-tiny": create_whisper_tiny,
         "openai/whisper-base": create_whisper_base,
@@ -30,34 +33,38 @@ def create_nnx_model(model_name: str):
 
 
 def compare_outputs(
-    name: str, hf_output: np.ndarray, nnx_output: np.ndarray, threshold: float = 1e-1
+    name: str, hf_output: np.ndarray, jax_output: np.ndarray, threshold: float = 1e-1
 ) -> bool:
     """Compare two outputs and print results."""
     print(f"\n{'=' * 80}\n{name}\n{'=' * 80}")
 
-    if hf_output.shape != nnx_output.shape:
-        print(f"✗ Shape mismatch: HF {hf_output.shape} vs NNX {nnx_output.shape}")
+    if hf_output.shape != jax_output.shape:
+        print(f"✗ Shape mismatch: HF {hf_output.shape} vs JAX {jax_output.shape}")
         return False
 
-    max_diff = np.max(np.abs(hf_output - nnx_output))
-    mean_diff = np.mean(np.abs(hf_output - nnx_output))
+    max_diff = np.max(np.abs(hf_output - jax_output))
+    mean_diff = np.mean(np.abs(hf_output - jax_output))
 
     print(f"Shape: {hf_output.shape}")
     print(f"Max diff: {max_diff:.6e}, Mean diff: {mean_diff:.6e}")
 
+    # Print sample outputs for visual inspection
+    print("\nSample outputs (first 10 values):")
+    print(f"  HF:  {hf_output.flat[:10]}")
+    print(f"  JAX: {jax_output.flat[:10]}")
+    print(f"  Diff: {(hf_output - jax_output).flat[:10]}")
+
     if max_diff < threshold:
-        print(f"✓ {name} MATCH!")
+        print(f"\n✓ {name} MATCH!")
         return True
     else:
-        print(f"✗ {name} DIFFER")
-        print(f"  HF:  {hf_output.flat[:5]}")
-        print(f"  NNX: {nnx_output.flat[:5]}")
+        print(f"\n✗ {name} DIFFER")
         return False
 
 
 def main():
     print("=" * 80)
-    print("WHISPER NNX vs HUGGINGFACE PYTORCH COMPARISON")
+    print("WHISPER JAX vs HUGGINGFACE PYTORCH COMPARISON")
     print("=" * 80)
 
     model_name = "openai/whisper-tiny"
@@ -68,9 +75,9 @@ def main():
     hf_model = HFWhisperModel.from_pretrained(model_name)
     hf_model.eval()
 
-    print("2. Creating and loading NNX model...")
-    nnx_model = create_nnx_model(model_name)
-    num_params = load_pretrained_weights(nnx_model, model_name)
+    print("2. Creating and loading JAX model...")
+    jax_model = create_nnx_model(model_name)
+    num_params = load_pretrained_weights(jax_model, model_name)
     print(f"   ✓ Loaded {num_params} parameters")
 
     # Create test inputs
@@ -86,8 +93,8 @@ def main():
     # Encoder
     with torch.no_grad():
         hf_enc = hf_model.encoder(torch.from_numpy(input_features)).last_hidden_state.numpy()
-    nnx_enc = np.array(nnx_model.encode(jnp.array(input_features), deterministic=True))
-    encoder_ok = compare_outputs("ENCODER", hf_enc, nnx_enc)
+    jax_enc = np.array(jax_model.encode(jnp.array(input_features), deterministic=True))
+    encoder_ok = compare_outputs("ENCODER", hf_enc, jax_enc)
 
     # Decoder
     with torch.no_grad():
@@ -95,29 +102,34 @@ def main():
             torch.from_numpy(input_features), decoder_input_ids=torch.from_numpy(decoder_ids)
         ).last_hidden_state.numpy()
 
-    nnx_dec = np.array(
-        nnx_model.decoder(
+    jax_dec = np.array(
+        jax_model.decoder(
             jnp.array(decoder_ids),
-            encoder_hidden_states=nnx_model.encode(jnp.array(input_features), deterministic=True),
+            encoder_hidden_states=jax_model.encode(jnp.array(input_features), deterministic=True),
             deterministic=True,
         )
     )
-    decoder_ok = compare_outputs("DECODER", hf_dec, nnx_dec)
+    decoder_ok = compare_outputs("DECODER", hf_dec, jax_dec)
 
-    # Logits (NNX only, HF WhisperModel doesn't have lm_head)
-    nnx_logits = np.array(
-        nnx_model(jnp.array(input_features), jnp.array(decoder_ids), deterministic=True)
+    # Logits (JAX only, HF WhisperModel doesn't have lm_head)
+    jax_logits = np.array(
+        jax_model(jnp.array(input_features), jnp.array(decoder_ids), deterministic=True)
     )
-    logits_ok = nnx_logits.shape == (1, 4, 51865)
+    logits_ok = jax_logits.shape == (1, 4, 51865)
     print(f"\n{'=' * 80}\nLOGITS\n{'=' * 80}")
-    print(f"Shape: {nnx_logits.shape}")
-    print(f"{'✓' if logits_ok else '✗'} Logits shape {'correct' if logits_ok else 'incorrect'}")
+    print(f"Shape: {jax_logits.shape}")
+    print("\nSample logits (first 10 values for first token):")
+    print(f"  {jax_logits[0, 0, :10]}")
+    print("\nPredicted tokens (argmax per position):")
+    predicted_tokens = np.argmax(jax_logits[0], axis=-1)
+    print(f"  {predicted_tokens}")
+    print(f"\n{'✓' if logits_ok else '✗'} Logits shape {'correct' if logits_ok else 'incorrect'}")
 
     # Summary
     print(f"\n{'=' * 80}\nSUMMARY\n{'=' * 80}")
 
     if encoder_ok and decoder_ok and logits_ok:
-        print("✓ All tests PASSED! NNX implementation matches PyTorch reference.")
+        print("✓ All tests PASSED! JAX implementation matches PyTorch reference.")
         print("\nOutputs match within float32 precision (~1e-2).")
         print("Small differences are expected due to accumulated floating-point errors.")
     else:

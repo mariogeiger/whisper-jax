@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "whisper-nnx"
+name = "whisper-jax"
 version = "0.1.0"
 description = "Pure JAX implementation of OpenAI's Whisper using Flax NNX"
 readme = "README.md"
@@ -59,12 +59,12 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/mario/whisper-nnx"
-Repository = "https://github.com/mario/whisper-nnx"
-Issues = "https://github.com/mario/whisper-nnx/issues"
+Homepage = "https://github.com/mariogeiger/whisper-jax"
+Repository = "https://github.com/mariogeiger/whisper-jax"
+Issues = "https://github.com/mariogeiger/whisper-jax/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/whisper_nnx"]
+packages = ["src/whisper_jax"]
 
 [tool.hatch.build.targets.sdist]
 include = [
@@ -80,7 +80,7 @@ features = ["dev", "weights"]
 test = "pytest {args:tests}"
 lint = "ruff check {args:.}"
 format = "ruff format {args:.}"
-typecheck = "mypy src/whisper_nnx"
+typecheck = "mypy src/whisper_jax"
 
 [tool.hatch.envs.cuda]
 features = ["dev", "weights"]
@@ -106,7 +106,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["whisper_nnx"]
+known-first-party = ["whisper_jax"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -133,7 +133,7 @@ python_functions = "test_*"
 addopts = "-v --tb=short"
 
 [tool.coverage.run]
-source = ["src/whisper_nnx"]
+source = ["src/whisper_jax"]
 branch = true
 
 [tool.coverage.report]
