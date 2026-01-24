@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""
-Example usage of the pure JAX Whisper implementation.
-
-This demonstrates:
-1. Creating a Whisper model from scratch
-2. Downloading pretrained weights
-3. Running inference
-"""
+"""Example usage of the pure JAX Whisper implementation."""
 
 import jax
 import jax.numpy as jnp
@@ -16,78 +9,62 @@ from whisper_nnx import (
     create_whisper_base,
     create_whisper_small,
     create_whisper_tiny,
-    download_whisper_weights,
     get_whisper_config,
+    load_pretrained_weights,
     print_model_info,
 )
 
 
-def example_1_create_model():
-    """Example 1: Create a Whisper model from scratch."""
-    print("=" * 80)
-    print("EXAMPLE 1: Creating a Whisper model from scratch")
-    print("=" * 80 + "\n")
+def print_section(title):
+    """Print section header."""
+    print(f"\n{'=' * 80}\n{title}\n{'=' * 80}")
 
-    # Create model with random initialization
+
+def example_1_create_model():
+    """Create a Whisper model from scratch."""
+    print_section("EXAMPLE 1: Creating a model from scratch")
+
     rngs = nnx.Rngs(42)
     model = create_whisper_tiny(rngs=rngs)
 
     # Create dummy input
-    batch_size = 1
-    num_mel_bins = 80
-    time_steps = 3000  # 30 seconds of audio at 16kHz with 100Hz hop length
+    input_features = jax.random.normal(rngs(), (1, 80, 3000))
+    decoder_input_ids = jnp.array([[50258, 50259, 50359]])
 
-    input_features = jax.random.normal(rngs(), (batch_size, num_mel_bins, time_steps))
-    decoder_input_ids = jnp.array([[50258, 50259, 50359]])  # <start>, language, task tokens
-
-    print(f"Input shape: {input_features.shape}")
-    print(f"Decoder input shape: {decoder_input_ids.shape}\n")
-
-    # Encode
+    # Run inference
     encoder_output = model.encode(input_features, deterministic=True)
-    print(f"Encoder output shape: {encoder_output.shape}")
-
-    # Decode
     logits = model.decode(decoder_input_ids, encoder_output, deterministic=True)
-    print(f"Logits shape: {logits.shape}")
 
-    # Get predictions
-    predicted_ids = jnp.argmax(logits, axis=-1)
-    print(f"Predicted token IDs: {predicted_ids[0][:10]}")
+    print(f"Input: {input_features.shape}")
+    print(f"Encoder output: {encoder_output.shape}")
+    print(f"Logits: {logits.shape}")
+    print(f"Predicted IDs: {jnp.argmax(logits, axis=-1)[0][:10]}")
+    print("\n✓ Complete!")
 
-    print("\n✓ Example 1 complete!\n")
 
-
-def example_2_download_weights():
-    """Example 2: Download pretrained weights."""
-    print("=" * 80)
-    print("EXAMPLE 2: Downloading pretrained weights")
-    print("=" * 80 + "\n")
+def example_2_load_pretrained():
+    """Load pretrained weights."""
+    print_section("EXAMPLE 2: Loading pretrained weights")
 
     model_name = "openai/whisper-tiny"
-
-    # Get configuration
     config = get_whisper_config(model_name)
     print_model_info(config)
 
-    # Download weights
-    try:
-        _params, config = download_whisper_weights(model_name)
-        print(f"\n✓ Successfully downloaded weights for {model_name}")
-        print(f"  Embedding dimension: {config.d_model}")
-        print(f"  Encoder layers: {config.encoder_layers}")
-        print(f"  Decoder layers: {config.decoder_layers}")
-    except Exception as e:
-        print(f"\n✗ Error downloading weights: {e}")
+    # Create and load model
+    model = create_whisper_tiny(rngs=nnx.Rngs(42))
+    num_params = load_pretrained_weights(model, model_name)
+    print(f"✓ Loaded {num_params} parameters")
 
-    print("\n✓ Example 2 complete!\n")
+    # Test
+    input_features = jax.random.normal(jax.random.PRNGKey(0), (1, 80, 3000))
+    logits = model(input_features, jnp.array([[50258, 50259, 50359]]), deterministic=True)
+    print(f"Logits shape: {logits.shape}")
+    print("\n✓ Complete!")
 
 
 def example_3_model_comparison():
-    """Example 3: Compare different model sizes."""
-    print("=" * 80)
-    print("EXAMPLE 3: Comparing different Whisper model sizes")
-    print("=" * 80 + "\n")
+    """Compare different model sizes."""
+    print_section("EXAMPLE 3: Comparing model sizes")
 
     models = {
         "tiny": create_whisper_tiny,
@@ -95,162 +72,89 @@ def example_3_model_comparison():
         "small": create_whisper_small,
     }
 
-    # Create dummy input
-    batch_size = 1
-    num_mel_bins = 80
-    time_steps = 3000
-
     rngs = nnx.Rngs(0)
-    input_features = jax.random.normal(rngs(), (batch_size, num_mel_bins, time_steps))
+    input_features = jax.random.normal(rngs(), (1, 80, 3000))
 
     for name, create_fn in models.items():
-        print(f"\n{name.upper()} MODEL:")
-        print("-" * 40)
-
-        rngs = nnx.Rngs(0)
-        model = create_fn(rngs=rngs)
-
-        # Count parameters
-        params_graph = nnx.state(model, nnx.Param)
-        total_params = sum(
+        model = create_fn(rngs=nnx.Rngs(0))
+        params = nnx.state(model, nnx.Param)
+        total = sum(
             x.value.size if hasattr(x, "value") else (x.size if hasattr(x, "size") else 0)
-            for x in jax.tree.leaves(params_graph)
+            for x in jax.tree.leaves(params)
         )
+        encoder_out = model.encode(input_features, deterministic=True)
+        print(f"{name.upper()}: {total:,} params, embed_dim={encoder_out.shape[-1]}")
 
-        print(f"  Total parameters: {total_params:,}")
-
-        # Test encoding
-        encoder_output = model.encode(input_features, deterministic=True)
-        print(f"  Encoder output shape: {encoder_output.shape}")
-        print(f"  Embedding dimension: {encoder_output.shape[-1]}")
-
-    print("\n✓ Example 3 complete!\n")
+    print("\n✓ Complete!")
 
 
 def example_4_inference_pipeline():
-    """Example 4: Complete inference pipeline."""
-    print("=" * 80)
-    print("EXAMPLE 4: Complete inference pipeline")
-    print("=" * 80 + "\n")
+    """Complete inference pipeline with autoregressive decoding."""
+    print_section("EXAMPLE 4: Inference pipeline")
 
-    # Create model
-    rngs = nnx.Rngs(42)
-    model = create_whisper_tiny(rngs=rngs)
+    model = create_whisper_tiny(rngs=nnx.Rngs(42))
+    input_features = jax.random.normal(jax.random.PRNGKey(42), (1, 80, 3000))
 
-    # Simulate mel-spectrogram input (normally from audio preprocessing)
-    batch_size = 1
-    num_mel_bins = 80
-    time_steps = 3000
-
-    print("Step 1: Preprocessing audio to mel-spectrogram")
-    input_features = jax.random.normal(rngs(), (batch_size, num_mel_bins, time_steps))
-    print(f"  Input features shape: {input_features.shape}")
-
-    print("\nStep 2: Encoding audio")
+    print("1. Encoding audio...")
     encoder_output = model.encode(input_features, deterministic=True)
-    print(f"  Encoder output shape: {encoder_output.shape}")
+    print(f"   Encoder output: {encoder_output.shape}")
 
-    print("\nStep 3: Autoregressive decoding")
+    print("\n2. Autoregressive decoding...")
+    generated = jnp.array([[50258, 50259, 50359]])  # Start tokens
 
-    # Start tokens: <start of transcript>, <language>, <task>
-    # For Whisper: 50258 = <|startoftranscript|>
-    #              50259 = <|en|> (English)
-    #              50359 = <|transcribe|> (transcription task)
-    decoder_input_ids = jnp.array([[50258, 50259, 50359]])
+    for step in range(10):
+        logits = model.decode(generated, encoder_output, deterministic=True)
+        next_token = jnp.argmax(logits[:, -1:, :], axis=-1)
+        generated = jnp.concatenate([generated, next_token], axis=1)
+        print(f"   Step {step + 1}: token {int(next_token[0, 0])}")
 
-    # Simulate greedy decoding (normally would loop until EOS)
-    max_length = 10
-    generated_ids = decoder_input_ids
-
-    for step in range(max_length):
-        # Get logits for next token
-        logits = model.decode(generated_ids, encoder_output, deterministic=True)
-
-        # Get next token (greedy)
-        next_token = jnp.argmax(logits[:, -1, :], axis=-1, keepdims=True)
-
-        # Append to sequence
-        generated_ids = jnp.concatenate([generated_ids, next_token], axis=1)
-
-        print(f"  Step {step + 1}: Generated token {int(next_token[0, 0])}")
-
-    print(f"\n  Final generated sequence: {generated_ids[0]}")
-
-    print("\nStep 4: Decoding tokens to text")
-    print("  (Normally would use WhisperTokenizer here)")
-    print(f"  Generated {len(generated_ids[0])} tokens")
-
-    print("\n✓ Example 4 complete!\n")
+    print(f"\n   Generated {len(generated[0])} tokens: {generated[0]}")
+    print("\n✓ Complete!")
 
 
 def example_5_batch_processing():
-    """Example 5: Batch processing multiple inputs."""
-    print("=" * 80)
-    print("EXAMPLE 5: Batch processing")
-    print("=" * 80 + "\n")
+    """Batch processing multiple inputs."""
+    print_section("EXAMPLE 5: Batch processing")
 
-    # Create model
-    rngs = nnx.Rngs(42)
-    model = create_whisper_tiny(rngs=rngs)
-
-    # Create batch of inputs
+    model = create_whisper_tiny(rngs=nnx.Rngs(42))
     batch_size = 4
-    num_mel_bins = 80
-    time_steps = 3000
 
-    print(f"Processing batch of {batch_size} audio samples")
+    # Batch inputs
+    input_features = jax.random.normal(jax.random.PRNGKey(0), (batch_size, 80, 3000))
+    decoder_ids = jnp.tile(jnp.array([[50258, 50259, 50359]]), (batch_size, 1))
 
-    input_features = jax.random.normal(rngs(), (batch_size, num_mel_bins, time_steps))
-    print(f"  Input shape: {input_features.shape}")
+    # Batch forward
+    encoder_out = model.encode(input_features, deterministic=True)
+    logits = model.decode(decoder_ids, encoder_out, deterministic=True)
 
-    # Encode all at once (efficient batching)
-    encoder_outputs = model.encode(input_features, deterministic=True)
-    print(f"  Encoder output shape: {encoder_outputs.shape}")
-
-    # Decode each with different start tokens
-    decoder_input_ids = jnp.array(
-        [
-            [50258, 50259, 50359],  # English transcription
-            [50258, 50259, 50359],  # English transcription
-            [50258, 50259, 50359],  # English transcription
-            [50258, 50259, 50359],  # English transcription
-        ]
-    )
-
-    logits = model.decode(decoder_input_ids, encoder_outputs, deterministic=True)
-    print(f"  Logits shape: {logits.shape}")
-
-    print(f"\n  Processed {batch_size} samples in parallel!")
-
-    print("\n✓ Example 5 complete!\n")
+    print(f"Batch size: {batch_size}")
+    print(f"Encoder output: {encoder_out.shape}")
+    print(f"Logits: {logits.shape}")
+    print(f"\n✓ Processed {batch_size} samples in parallel!")
 
 
 def main():
     """Run all examples."""
-    print("\n" + "=" * 80)
-    print("WHISPER NNX - PURE JAX IMPLEMENTATION EXAMPLES")
-    print("=" * 80 + "\n")
+    print_section("WHISPER NNX - EXAMPLES")
 
     examples = [
-        ("Creating a model from scratch", example_1_create_model),
-        ("Downloading pretrained weights", example_2_download_weights),
-        ("Comparing model sizes", example_3_model_comparison),
-        ("Complete inference pipeline", example_4_inference_pipeline),
-        ("Batch processing", example_5_batch_processing),
+        example_1_create_model,
+        example_2_load_pretrained,
+        example_3_model_comparison,
+        example_4_inference_pipeline,
+        example_5_batch_processing,
     ]
 
-    for i, (_name, example_fn) in enumerate(examples, 1):
+    for i, example_fn in enumerate(examples, 1):
         try:
             example_fn()
         except Exception as e:
-            print(f"\n✗ Example {i} failed: {e}\n")
+            print(f"\n✗ Example {i} failed: {e}")
             import traceback
 
             traceback.print_exc()
 
-    print("=" * 80)
-    print("ALL EXAMPLES COMPLETE!")
-    print("=" * 80 + "\n")
+    print_section("ALL EXAMPLES COMPLETE!")
 
 
 if __name__ == "__main__":

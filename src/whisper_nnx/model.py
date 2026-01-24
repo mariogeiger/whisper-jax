@@ -230,7 +230,7 @@ class WhisperEncoder(nnx.Module):
             in_features=num_mel_bins,
             out_features=embed_dim,
             kernel_size=(3,),
-            padding="SAME",
+            padding=1,
             rngs=rngs,
         )
         self.conv2 = nnx.Conv(
@@ -238,7 +238,7 @@ class WhisperEncoder(nnx.Module):
             out_features=embed_dim,
             kernel_size=(3,),
             strides=(2,),
-            padding="SAME",
+            padding=1,
             rngs=rngs,
         )
 

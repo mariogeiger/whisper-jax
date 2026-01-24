@@ -18,10 +18,8 @@ from whisper_nnx.model import (
     create_whisper_tiny,
 )
 from whisper_nnx.weight_loader import (
-    download_whisper_weights,
     get_whisper_config,
-    load_weights_into_nnx_model,
-    map_huggingface_to_nnx,
+    load_pretrained_weights,
     print_model_info,
 )
 
@@ -39,9 +37,7 @@ __all__ = [
     "create_whisper_base",
     "create_whisper_small",
     "create_whisper_tiny",
-    "download_whisper_weights",
     "get_whisper_config",
-    "load_weights_into_nnx_model",
-    "map_huggingface_to_nnx",
+    "load_pretrained_weights",
     "print_model_info",
 ]
