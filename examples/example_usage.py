@@ -72,7 +72,7 @@ def example_2_download_weights():
 
     # Download weights
     try:
-        params, config = download_whisper_weights(model_name)
+        _params, config = download_whisper_weights(model_name)
         print(f"\n✓ Successfully downloaded weights for {model_name}")
         print(f"  Embedding dimension: {config.d_model}")
         print(f"  Encoder layers: {config.encoder_layers}")

@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from transformers import WhisperConfig
 
 
-def download_whisper_weights(model_name: str = "openai/whisper-tiny") -> tuple[dict, "WhisperConfig"]:
+def download_whisper_weights(model_name: str = "openai/whisper-tiny") -> tuple[dict, WhisperConfig]:
     """
     Download pretrained Whisper weights from HuggingFace Hub.
 
@@ -54,7 +54,7 @@ def download_whisper_weights(model_name: str = "openai/whisper-tiny") -> tuple[d
     return params, config
 
 
-def map_huggingface_to_nnx(hf_params: dict, config: "WhisperConfig") -> dict:
+def map_huggingface_to_nnx(hf_params: dict, config: WhisperConfig) -> dict:
     """
     Map HuggingFace Flax parameters to NNX parameter structure.
 
@@ -79,7 +79,7 @@ def map_huggingface_to_nnx(hf_params: dict, config: "WhisperConfig") -> dict:
 
 
 def load_weights_into_nnx_model(
-    model: nnx.Module, hf_params: dict, config: "WhisperConfig"
+    model: nnx.Module, hf_params: dict, config: WhisperConfig
 ) -> None:
     """
     Load HuggingFace weights into NNX model.
@@ -122,7 +122,7 @@ def load_weights_into_nnx_model(
     print("implement detailed parameter name translation.")
 
 
-def get_whisper_config(model_name: str) -> "WhisperConfig":
+def get_whisper_config(model_name: str) -> WhisperConfig:
     """Get Whisper configuration for a model."""
     from transformers import WhisperConfig as HFWhisperConfig
 
@@ -130,7 +130,7 @@ def get_whisper_config(model_name: str) -> "WhisperConfig":
     return config
 
 
-def print_model_info(config: "WhisperConfig") -> None:
+def print_model_info(config: WhisperConfig) -> None:
     """Print model architecture information."""
     print(f"\n{'=' * 80}")
     print(f"MODEL CONFIGURATION: {config._name_or_path}")

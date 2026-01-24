@@ -28,22 +28,17 @@ from whisper_nnx.weight_loader import (
 __version__ = "0.1.0"
 
 __all__ = [
-    # Version
-    "__version__",
-    # Components
     "DecoderLayer",
     "EncoderLayer",
     "FeedForward",
     "MultiHeadAttention",
-    # Models
     "WhisperDecoder",
     "WhisperEncoder",
     "WhisperModel",
-    # Factories
+    "__version__",
     "create_whisper_base",
     "create_whisper_small",
     "create_whisper_tiny",
-    # Weight loading
     "download_whisper_weights",
     "get_whisper_config",
     "load_weights_into_nnx_model",
