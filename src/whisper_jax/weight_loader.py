@@ -87,13 +87,19 @@ def convert_layer_name(hf_name: str, module: str) -> str:
 
 def load_pretrained_weights(model: nnx.Module, model_name: str = "openai/whisper-tiny") -> int:
     """Load pretrained weights from HuggingFace into NNX model."""
-    from transformers import WhisperModel as HFWhisperModel
+    from huggingface_hub import hf_hub_download
+    from safetensors import safe_open
 
     print(f"Loading pretrained weights from {model_name}...")
 
-    # Load HuggingFace model
-    hf_model = HFWhisperModel.from_pretrained(model_name)
-    hf_state = hf_model.state_dict()
+    # Download and load weights directly from HuggingFace Hub
+    weights_path = hf_hub_download(repo_id=model_name, filename="model.safetensors")
+    hf_state = {}
+    with safe_open(weights_path, framework="numpy") as f:
+        for key in f.keys():
+            # Remove "model." prefix that safetensors uses
+            clean_key = key[6:] if key.startswith("model.") else key
+            hf_state[clean_key] = f.get_tensor(key)
 
     # Get NNX state
     _, nnx_state = nnx.split(model)
@@ -108,8 +114,6 @@ def load_pretrained_weights(model: nnx.Module, model_name: str = "openai/whisper
         if nnx_name not in flat_nnx:
             continue
 
-        hf_param = hf_param.numpy()
-
         # Transpose linear layers: PyTorch (out, in) → JAX (in, out)
         if needs_transpose(hf_name, hf_param):
             hf_param = hf_param.T
@@ -122,6 +126,15 @@ def load_pretrained_weights(model: nnx.Module, model_name: str = "openai/whisper
         if hf_param.shape == flat_nnx[nnx_name].shape:
             flat_nnx[nnx_name] = jnp.array(hf_param)
             transferred += 1
+
+    # Handle tied weights: LM head shares weights with decoder embed tokens
+    # In HuggingFace, proj_out uses the same weights as decoder.embed_tokens
+    embed_key = "decoder.embed_tokens.embedding"
+    lm_head_key = "lm_head.kernel"
+    if embed_key in flat_nnx and lm_head_key in flat_nnx:
+        # LM head kernel is (embed_dim, vocab_size), embed is (vocab_size, embed_dim)
+        flat_nnx[lm_head_key] = flat_nnx[embed_key].T
+        transferred += 1
 
     # Update model
     nnx.update(model, nnx.State(unflatten_state_dict(flat_nnx, sep=".")))

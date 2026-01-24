@@ -11,7 +11,7 @@ import jax.numpy as jnp
 import numpy as np
 import torch
 from flax import nnx
-from transformers import WhisperModel as HFWhisperModel
+from transformers import WhisperForConditionalGeneration as HFWhisperModel
 
 from whisper_jax import create_whisper_base, create_whisper_small, create_whisper_tiny
 from whisper_jax.weight_loader import load_pretrained_weights
@@ -92,43 +92,52 @@ def main():
 
     # Encoder
     with torch.no_grad():
-        hf_enc = hf_model.encoder(torch.from_numpy(input_features)).last_hidden_state.numpy()
+        hf_enc = hf_model.model.encoder(torch.from_numpy(input_features)).last_hidden_state.numpy()
     jax_enc = np.array(jax_model.encode(jnp.array(input_features), deterministic=True))
     encoder_ok = compare_outputs("ENCODER", hf_enc, jax_enc)
 
-    # Decoder
+    # Decoder (hidden states before LM head)
     with torch.no_grad():
-        hf_dec = hf_model(
+        hf_out = hf_model.model(
             torch.from_numpy(input_features), decoder_input_ids=torch.from_numpy(decoder_ids)
-        ).last_hidden_state.numpy()
+        )
+        hf_dec = hf_out.last_hidden_state.numpy()
 
+    jax_enc_out = jax_model.encode(jnp.array(input_features), deterministic=True)
     jax_dec = np.array(
         jax_model.decoder(
             jnp.array(decoder_ids),
-            encoder_hidden_states=jax_model.encode(jnp.array(input_features), deterministic=True),
+            encoder_hidden_states=jax_enc_out,
             deterministic=True,
         )
     )
     decoder_ok = compare_outputs("DECODER", hf_dec, jax_dec)
 
-    # Logits (JAX only, HF WhisperModel doesn't have lm_head)
+    # Logits (after LM head / proj_out)
+    with torch.no_grad():
+        hf_logits = hf_model(
+            torch.from_numpy(input_features), decoder_input_ids=torch.from_numpy(decoder_ids)
+        ).logits.numpy()
+
     jax_logits = np.array(
         jax_model(jnp.array(input_features), jnp.array(decoder_ids), deterministic=True)
     )
-    logits_ok = jax_logits.shape == (1, 4, 51865)
-    print(f"\n{'=' * 80}\nLOGITS\n{'=' * 80}")
-    print(f"Shape: {jax_logits.shape}")
-    print("\nSample logits (first 10 values for first token):")
-    print(f"  {jax_logits[0, 0, :10]}")
-    print("\nPredicted tokens (argmax per position):")
-    predicted_tokens = np.argmax(jax_logits[0], axis=-1)
-    print(f"  {predicted_tokens}")
-    print(f"\n{'✓' if logits_ok else '✗'} Logits shape {'correct' if logits_ok else 'incorrect'}")
+    logits_ok = compare_outputs("LOGITS", hf_logits, jax_logits)
+
+    # Verify predicted tokens match
+    hf_tokens = np.argmax(hf_logits[0], axis=-1)
+    jax_tokens = np.argmax(jax_logits[0], axis=-1)
+    tokens_match = np.array_equal(hf_tokens, jax_tokens)
+    print(f"\n{'=' * 80}\nPREDICTED TOKENS\n{'=' * 80}")
+    print(f"HF tokens:  {hf_tokens}")
+    print(f"JAX tokens: {jax_tokens}")
+    print(f"{'✓' if tokens_match else '✗'} Predicted tokens {'match' if tokens_match else 'DIFFER'}")
 
     # Summary
     print(f"\n{'=' * 80}\nSUMMARY\n{'=' * 80}")
 
-    if encoder_ok and decoder_ok and logits_ok:
+    all_ok = encoder_ok and decoder_ok and logits_ok and tokens_match
+    if all_ok:
         print("✓ All tests PASSED! JAX implementation matches PyTorch reference.")
         print("\nOutputs match within float32 precision (~1e-2).")
         print("Small differences are expected due to accumulated floating-point errors.")
@@ -139,9 +148,11 @@ def main():
         if not decoder_ok:
             print("  - Decoder outputs differ")
         if not logits_ok:
-            print("  - Logits shape incorrect")
+            print("  - Logits values differ")
+        if not tokens_match:
+            print("  - Predicted tokens differ (critical: affects transcription)")
 
-    return encoder_ok and decoder_ok and logits_ok
+    return all_ok
 
 
 if __name__ == "__main__":
