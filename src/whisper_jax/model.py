@@ -22,28 +22,30 @@ class MultiHeadAttention(nnx.Module):
 
     def __call__(
         self, x: jax.Array, kv: jax.Array | None = None, deterministic: bool = True
-    ) -> jax.Array:
-        """Apply attention. Use kv for cross-attention, None for self-attention."""
+    ) -> tuple[jax.Array, jax.Array]:
+        """Apply attention. Use kv for cross-attention, None for self-attention.
+
+        Returns:
+            (output, attention_weights) where attention_weights has shape
+            (B, num_heads, L, kv_len).
+        """
         B, L, _D = x.shape
         if kv is None:
             kv = x
 
-        # Project and reshape to (B, H, L, head_dim)
         q = self.q_proj(x).reshape(B, L, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
         k = self.k_proj(kv).reshape(B, -1, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
         v = self.v_proj(kv).reshape(B, -1, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
 
-        # Attention scores
         attn = (q @ k.transpose(0, 1, 3, 2)) / jnp.sqrt(self.head_dim)
 
-        # Causal mask
         if self.is_causal:
             mask = jnp.triu(jnp.ones((L, L)), k=1)
             attn = jnp.where(mask[None, None], -1e10, attn)
 
         attn = jax.nn.softmax(attn, axis=-1)
         out = (attn @ v).transpose(0, 2, 1, 3).reshape(B, L, -1)
-        return self.out_proj(out)
+        return self.out_proj(out), attn
 
 
 class FeedForward(nnx.Module):
@@ -67,7 +69,8 @@ class EncoderLayer(nnx.Module):
         self.final_layer_norm = nnx.LayerNorm(embed_dim, epsilon=1e-5, rngs=rngs)
 
     def __call__(self, x: jax.Array, deterministic: bool = True) -> jax.Array:
-        x = x + self.self_attn(self.self_attn_layer_norm(x), deterministic=deterministic)
+        attn_out, _ = self.self_attn(self.self_attn_layer_norm(x), deterministic=deterministic)
+        x = x + attn_out
         x = x + self.ffn(self.final_layer_norm(x), deterministic=deterministic)
         return x
 
@@ -85,14 +88,25 @@ class DecoderLayer(nnx.Module):
 
     def __call__(
         self, x: jax.Array, enc: jax.Array | None = None, deterministic: bool = True
-    ) -> jax.Array:
-        x = x + self.self_attn(self.self_attn_layer_norm(x), deterministic=deterministic)
+    ) -> tuple[jax.Array, jax.Array | None]:
+        """Apply decoder layer.
+
+        Returns:
+            (output, cross_attention) where cross_attention has shape
+            (B, num_heads, L, encoder_len), or None if enc is None.
+        """
+        self_attn_out, _ = self.self_attn(self.self_attn_layer_norm(x), deterministic=deterministic)
+        x = x + self_attn_out
+
+        cross_attn = None
         if enc is not None:
-            x = x + self.encoder_attn(
+            cross_attn_out, cross_attn = self.encoder_attn(
                 self.encoder_attn_layer_norm(x), kv=enc, deterministic=deterministic
             )
+            x = x + cross_attn_out
+
         x = x + self.ffn(self.final_layer_norm(x), deterministic=deterministic)
-        return x
+        return x, cross_attn
 
 
 class WhisperEncoder(nnx.Module):
@@ -148,20 +162,30 @@ class WhisperDecoder(nnx.Module):
             [DecoderLayer(embed_dim, num_heads, ffn_dim, rngs=rngs) for _ in range(num_layers)]
         )
         self.layer_norm = nnx.LayerNorm(embed_dim, epsilon=1e-5, rngs=rngs)
+        self.num_heads = num_heads
 
     def __call__(
         self,
         input_ids: jax.Array,
         encoder_hidden_states: jax.Array | None = None,
         deterministic: bool = True,
-    ) -> jax.Array:
-        """Decode token IDs (B, L) → (B, L, D)."""
+    ) -> tuple[jax.Array, list[jax.Array]]:
+        """Decode token IDs (B, L) → (B, L, D).
+
+        Returns:
+            (output, cross_attentions) where cross_attentions is a list of
+            attention weights per layer, each (B, num_heads, L, encoder_len).
+        """
         x = self.embed_tokens(input_ids) + self.embed_positions(
             jnp.arange(input_ids.shape[1])[None, :]
         )
+
+        cross_attentions = []
         for layer in self.layers:
-            x = layer(x, enc=encoder_hidden_states, deterministic=deterministic)
-        return self.layer_norm(x)
+            x, cross_attn = layer(x, enc=encoder_hidden_states, deterministic=deterministic)
+            cross_attentions.append(cross_attn)
+
+        return self.layer_norm(x), cross_attentions
 
 
 class WhisperModel(nnx.Module):
@@ -210,10 +234,16 @@ class WhisperModel(nnx.Module):
         input_features: jax.Array,
         decoder_input_ids: jax.Array,
         deterministic: bool = True,
-    ) -> jax.Array:
+    ) -> tuple[jax.Array, list[jax.Array]]:
+        """Run full model.
+
+        Returns:
+            (logits, cross_attentions) where logits has shape (B, L, vocab_size)
+            and cross_attentions is a list of attention weights per decoder layer.
+        """
         enc = self.encode(input_features, deterministic)
-        dec = self.decoder(decoder_input_ids, enc, deterministic)
-        return self.lm_head(dec)
+        dec, cross_attentions = self.decoder(decoder_input_ids, enc, deterministic)
+        return self.lm_head(dec), cross_attentions
 
 
 def create_whisper_tiny(rngs: nnx.Rngs | None = None) -> WhisperModel:

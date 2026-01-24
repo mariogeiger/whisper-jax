@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from whisper_jax import (
+    LANG_TOKENS,
     create_whisper_base,
     create_whisper_large,
     create_whisper_medium,
@@ -29,22 +30,6 @@ SAMPLE_RATE = 16000
 CHUNK_DURATION = 5.0
 MAX_AUDIO_SAMPLES = int(SAMPLE_RATE * CHUNK_DURATION)
 MAX_TOKENS = 100
-
-# Language tokens for Whisper
-LANG_TOKENS = {
-    "en": 50259,
-    "fr": 50265,
-    "de": 50261,
-    "es": 50262,
-    "it": 50274,
-    "pt": 50267,
-    "nl": 50271,
-    "pl": 50269,
-    "ru": 50263,
-    "zh": 50260,
-    "ja": 50266,
-    "ko": 50264,
-}
 
 # Model configs
 MODEL_CONFIGS = {
@@ -112,7 +97,8 @@ class WhisperTranscriber:
 
             def decode_step(carry, idx):
                 toks, enc = carry
-                logits = lm_head(decoder(toks[None], enc, deterministic=True))
+                dec_out, _ = decoder(toks[None], enc, deterministic=True)
+                logits = lm_head(dec_out)
                 next_tok = jnp.argmax(logits[0, 3 + idx])
                 return (toks.at[4 + idx].set(next_tok), enc), None
 

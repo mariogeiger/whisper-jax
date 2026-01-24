@@ -90,8 +90,6 @@ def load_pretrained_weights(model: nnx.Module, model_name: str = "openai/whisper
     from huggingface_hub import hf_hub_download
     from safetensors import safe_open
 
-    print(f"Loading pretrained weights from {model_name}...")
-
     # Download and load weights directly from HuggingFace Hub
     weights_path = hf_hub_download(repo_id=model_name, filename="model.safetensors")
     hf_state = {}
@@ -104,8 +102,6 @@ def load_pretrained_weights(model: nnx.Module, model_name: str = "openai/whisper
     # Get NNX state
     _, nnx_state = nnx.split(model)
     flat_nnx = flatten_state_dict(nnx_state.to_pure_dict(), sep=".")
-
-    print(f"  HuggingFace: {len(hf_state)} params, NNX: {len(flat_nnx)} params")
 
     # Transfer weights
     transferred = 0
@@ -139,5 +135,4 @@ def load_pretrained_weights(model: nnx.Module, model_name: str = "openai/whisper
     # Update model
     nnx.update(model, nnx.State(unflatten_state_dict(flat_nnx, sep=".")))
 
-    print(f"  ✓ Transferred {transferred} parameters")
     return transferred

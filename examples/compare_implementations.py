@@ -104,13 +104,12 @@ def main():
         hf_dec = hf_out.last_hidden_state.numpy()
 
     jax_enc_out = jax_model.encode(jnp.array(input_features), deterministic=True)
-    jax_dec = np.array(
-        jax_model.decoder(
-            jnp.array(decoder_ids),
-            encoder_hidden_states=jax_enc_out,
-            deterministic=True,
-        )
+    jax_dec_out, _ = jax_model.decoder(
+        jnp.array(decoder_ids),
+        encoder_hidden_states=jax_enc_out,
+        deterministic=True,
     )
+    jax_dec = np.array(jax_dec_out)
     decoder_ok = compare_outputs("DECODER", hf_dec, jax_dec)
 
     # Logits (after LM head / proj_out)
@@ -119,9 +118,10 @@ def main():
             torch.from_numpy(input_features), decoder_input_ids=torch.from_numpy(decoder_ids)
         ).logits.numpy()
 
-    jax_logits = np.array(
-        jax_model(jnp.array(input_features), jnp.array(decoder_ids), deterministic=True)
+    jax_logits_out, _ = jax_model(
+        jnp.array(input_features), jnp.array(decoder_ids), deterministic=True
     )
+    jax_logits = np.array(jax_logits_out)
     logits_ok = compare_outputs("LOGITS", hf_logits, jax_logits)
 
     # Verify predicted tokens match

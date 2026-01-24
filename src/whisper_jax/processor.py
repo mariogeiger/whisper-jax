@@ -209,6 +209,13 @@ SPECIAL_TOKENS = {
     50364: "<|0.00|>",
 }
 
+# Language token IDs for Whisper models
+LANG_TOKENS = {
+    "en": 50259, "fr": 50265, "de": 50261, "es": 50262,
+    "it": 50274, "pt": 50267, "nl": 50271, "pl": 50269,
+    "ru": 50263, "zh": 50260, "ja": 50266, "ko": 50264,
+}
+
 
 class WhisperTokenizer:
     """Simple tokenizer for decoding Whisper output tokens."""
@@ -299,3 +306,70 @@ def load_whisper_vocab_from_file(vocab_path: str | Path) -> WhisperTokenizer:
         vocab_dict = json.load(f)
     vocab = {int(v): k for k, v in vocab_dict.items()}
     return WhisperTokenizer(vocab)
+
+
+def create_transcribe_fn(model, max_tokens: int = 100):
+    """Create a JIT-compiled transcription function.
+
+    This function creates a highly optimized transcription function that:
+    - Uses jax.lax.while_loop for early stopping at EOT
+    - Captures model components in closure for optimal JIT performance
+    - Uses fixed-size token buffer for consistent shapes
+
+    Args:
+        model: WhisperModel instance
+        max_tokens: Maximum tokens to generate (compile-time constant)
+
+    Returns:
+        JIT-compiled function with signature:
+            (audio: jax.Array, lang_token: jax.Array) -> (tokens, num_generated)
+
+    Example:
+        transcribe = create_transcribe_fn(model)
+        tokens, n = transcribe(audio, jnp.array(50259))  # English
+        text_tokens = [int(t) for t in tokens[4:4+int(n)] if t < 50257]
+        text = tokenizer.decode(text_tokens)
+    """
+    encoder = model.encoder
+    decoder = model.decoder
+    lm_head = model.lm_head
+    EOT = 50257
+
+    @jax.jit
+    def transcribe(audio: jax.Array, lang_token: jax.Array) -> tuple[jax.Array, jax.Array]:
+        """Transcribe audio to tokens.
+
+        Args:
+            audio: Audio samples, shape (samples,), padded to 30s
+            lang_token: Language token ID (e.g., 50259 for English)
+
+        Returns:
+            (tokens, num_generated): Full token buffer and count of generated tokens
+        """
+        mel = log_mel_spectrogram(audio)
+        enc_out = encoder(mel, deterministic=True)
+
+        prompt = jnp.array([50258, lang_token, 50359, 50363], dtype=jnp.int32)
+        tokens = jnp.zeros(4 + max_tokens, dtype=jnp.int32).at[:4].set(prompt)
+
+        def cond(state):
+            tokens, enc, idx = state
+            not_at_max = idx < max_tokens
+            last_token = tokens[3 + idx]
+            not_eot = last_token != EOT
+            return not_at_max & not_eot
+
+        def body(state):
+            tokens, enc, idx = state
+            dec_out, _ = decoder(tokens[None], enc, deterministic=True)
+            logits = lm_head(dec_out)
+            next_token = jnp.argmax(logits[0, 3 + idx])
+            tokens = tokens.at[4 + idx].set(next_token)
+            return (tokens, enc, idx + 1)
+
+        tokens, _, num_gen = jax.lax.while_loop(
+            cond, body, (tokens, enc_out, jnp.array(0))
+        )
+        return tokens, num_gen
+
+    return transcribe
