@@ -200,13 +200,13 @@ whisper-jax/
 ├── whisper_nnx.py          # Core implementation (540 lines)
 ├── weight_loader.py         # Weight utilities (170 lines)
 ├── example_usage.py         # Examples (260 lines)
-├── IMPLEMENTATION.md        # Architecture docs (530 lines)
-├── README_NNX.md           # User README (350 lines)
-├── SUMMARY.md              # This file
-└── whisper_jax/            # Original whisper-jax code
-    ├── modeling_flax_whisper.py  # Reference implementation
-    ├── layers.py                  # Custom layers
-    └── ...
+├── test_compatibility.py    # Compatibility test suite
+├── README.md               # Main README (user guide)
+├── IMPLEMENTATION.md        # Architecture documentation
+├── COMPATIBILITY.md         # Compatibility notes
+├── SUMMARY.md              # This file (project summary)
+├── LICENSE                 # MIT License
+└── .gitignore             # Git ignore rules
 ```
 
 ## Dependencies (Latest Stable)
