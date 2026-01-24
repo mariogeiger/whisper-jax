@@ -4,21 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Whisper JAX - Speech to Text</title>
+    <title>Whisper JAX</title>
     <style>
-        :root {
-            --bg-primary: #0f172a;
-            --bg-secondary: #1e293b;
-            --bg-tertiary: #334155;
-            --text-primary: #f8fafc;
-            --text-secondary: #94a3b8;
-            --accent: #3b82f6;
-            --accent-hover: #2563eb;
-            --accent-glow: rgba(59, 130, 246, 0.4);
-            --success: #22c55e;
-            --danger: #ef4444;
-        }
-
         * {
             box-sizing: border-box;
             margin: 0;
@@ -26,67 +13,65 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f172a;
+            color: #f8fafc;
+            height: 100vh;
             display: flex;
             flex-direction: column;
-            align-items: center;
-            padding: 2rem;
+            overflow: hidden;
         }
 
-        .container {
-            max-width: 800px;
-            width: 100%;
-        }
-
+        /* Header - minimal with title and status */
         header {
-            text-align: center;
-            margin-bottom: 3rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 1.5rem;
+            background: #0f172a;
+            border-bottom: 1px solid #1e293b;
+            flex-shrink: 0;
         }
 
         h1 {
-            font-size: 2.5rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-            background: linear-gradient(135deg, var(--accent), #a855f7);
+            font-size: 1.25rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, #3b82f6, #a855f7);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
         }
 
-        .subtitle {
-            color: var(--text-secondary);
-            font-size: 1.1rem;
-        }
-
-        .status-bar {
+        .status {
             display: flex;
             align-items: center;
-            justify-content: center;
             gap: 0.5rem;
-            padding: 0.75rem 1.5rem;
-            background: var(--bg-secondary);
-            border-radius: 2rem;
-            margin-bottom: 2rem;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
+            color: #94a3b8;
         }
 
         .status-dot {
-            width: 10px;
-            height: 10px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
-            background: var(--text-secondary);
-            transition: background 0.3s;
+            background: #94a3b8;
+            transition: background 0.3s, box-shadow 0.3s;
         }
 
         .status-dot.connected {
-            background: var(--success);
+            background: #22c55e;
+            box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
         }
 
         .status-dot.recording {
-            background: var(--danger);
+            background: #ef4444;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+            animation: pulse 1s infinite;
+        }
+
+        .status-dot.loading {
+            background: #3b82f6;
+            box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
             animation: pulse 1s infinite;
         }
 
@@ -95,146 +80,44 @@
             0%,
             100% {
                 opacity: 1;
-                transform: scale(1);
             }
 
             50% {
-                opacity: 0.7;
-                transform: scale(1.2);
+                opacity: 0.5;
             }
         }
 
-        .mic-section {
+        /* Transcript area - scrollable middle section */
+        .transcript {
+            flex: 1;
             display: flex;
             flex-direction: column;
-            align-items: center;
-            margin-bottom: 2rem;
+            gap: 0;
+            overflow-y: auto;
+            padding: 1rem;
+            padding-bottom: 180px;
+            /* Space for bottom controls */
         }
 
-        .mic-button {
-            width: 120px;
-            height: 120px;
-            border-radius: 50%;
-            border: none;
-            background: linear-gradient(135deg, var(--accent), #6366f1);
-            color: white;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: transform 0.2s, box-shadow 0.2s;
-            box-shadow: 0 4px 20px var(--accent-glow);
+        .segment {
+            padding: 1rem 1.25rem;
+            background: #1e293b;
+            border-radius: 12px;
+            margin-bottom: 0.75rem;
+            animation: slideIn 0.3s ease-out;
+            line-height: 1.6;
+            font-size: 1rem;
         }
 
-        .mic-button:hover {
-            transform: scale(1.05);
-            box-shadow: 0 6px 30px var(--accent-glow);
+        .segment.processing {
+            color: #94a3b8;
+            font-style: italic;
         }
 
-        .mic-button:active {
-            transform: scale(0.98);
-        }
-
-        .mic-button.recording {
-            background: linear-gradient(135deg, var(--danger), #f97316);
-            animation: glow 1.5s ease-in-out infinite;
-        }
-
-        @keyframes glow {
-
-            0%,
-            100% {
-                box-shadow: 0 4px 20px rgba(239, 68, 68, 0.4);
-            }
-
-            50% {
-                box-shadow: 0 4px 40px rgba(239, 68, 68, 0.6);
-            }
-        }
-
-        .mic-button svg {
-            width: 48px;
-            height: 48px;
-        }
-
-        .mic-label {
-            margin-top: 1rem;
-            color: var(--text-secondary);
-            font-size: 0.9rem;
-        }
-
-        .audio-visualizer {
-            width: 100%;
-            height: 60px;
-            background: var(--bg-secondary);
-            border-radius: 0.5rem;
-            margin-bottom: 2rem;
-            overflow: hidden;
-        }
-
-        .audio-visualizer canvas {
-            width: 100%;
-            height: 100%;
-        }
-
-        .transcript-section {
-            background: var(--bg-secondary);
-            border-radius: 1rem;
-            padding: 1.5rem;
-            min-height: 200px;
-        }
-
-        .transcript-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1rem;
-            padding-bottom: 0.75rem;
-            border-bottom: 1px solid var(--bg-tertiary);
-        }
-
-        .transcript-header h2 {
-            font-size: 1.1rem;
-            font-weight: 600;
-        }
-
-        .clear-button {
-            padding: 0.4rem 0.8rem;
-            background: var(--bg-tertiary);
-            border: none;
-            border-radius: 0.5rem;
-            color: var(--text-secondary);
-            cursor: pointer;
-            font-size: 0.85rem;
-            transition: background 0.2s, color 0.2s;
-        }
-
-        .clear-button:hover {
-            background: var(--accent);
-            color: white;
-        }
-
-        .transcript-content {
-            font-size: 1.1rem;
-            line-height: 1.8;
-            color: var(--text-primary);
-            min-height: 120px;
-        }
-
-        .transcript-content .segment {
-            padding: 0.5rem 0;
-            border-bottom: 1px solid var(--bg-tertiary);
-            animation: fadeIn 0.3s ease-in;
-        }
-
-        .transcript-content .segment:last-child {
-            border-bottom: none;
-        }
-
-        @keyframes fadeIn {
+        @keyframes slideIn {
             from {
                 opacity: 0;
-                transform: translateY(10px);
+                transform: translateY(-16px);
             }
 
             to {
@@ -243,62 +126,195 @@
             }
         }
 
-        .transcript-content .placeholder {
-            color: var(--text-secondary);
-            font-style: italic;
-        }
-
-        footer {
-            margin-top: 3rem;
+        .placeholder {
+            color: #475569;
             text-align: center;
-            color: var(--text-secondary);
+            padding: 3rem;
+            font-size: 1.1rem;
+        }
+
+        /* Bottom controls - fixed footer */
+        .controls {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1.5rem;
+            padding: 1.5rem;
+            background: linear-gradient(to top, #0f172a 60%, transparent);
+            padding-top: 3rem;
+        }
+
+        /* Pill-style selectors */
+        .pill-select {
+            padding: 0.6rem 1rem;
+            background: #1e293b;
+            color: #e2e8f0;
+            border: 1px solid #334155;
+            border-radius: 20px;
             font-size: 0.85rem;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.2s;
+            min-width: 100px;
+            text-align: center;
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            padding-right: 2rem;
         }
 
-        footer a {
-            color: var(--accent);
-            text-decoration: none;
+        .pill-select:hover {
+            background-color: #334155;
+            border-color: #475569;
         }
 
-        footer a:hover {
-            text-decoration: underline;
+        .pill-select:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
         }
 
-        @media (max-width: 600px) {
-            body {
-                padding: 1rem;
+        .pill-select:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Mic button container with circular waveform */
+        .mic-container {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .wave-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .mic-button {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            border: none;
+            background: linear-gradient(135deg, #3b82f6, #6366f1);
+            color: #ffffff;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+            z-index: 1;
+            box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
+        }
+
+        .mic-button:hover:not(:disabled) {
+            transform: scale(1.05);
+            box-shadow: 0 6px 28px rgba(59, 130, 246, 0.4);
+        }
+
+        .mic-button:active:not(:disabled) {
+            transform: scale(0.98);
+        }
+
+        .mic-button:disabled {
+            background: #334155;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .mic-button.recording {
+            background: linear-gradient(135deg, #ef4444, #f97316);
+            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5);
+            animation: glow 1.5s infinite;
+        }
+
+        @keyframes glow {
+
+            0%,
+            100% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5), 0 4px 20px rgba(239, 68, 68, 0.3);
             }
 
-            h1 {
-                font-size: 1.8rem;
+            50% {
+                box-shadow: 0 0 0 12px rgba(239, 68, 68, 0), 0 4px 20px rgba(239, 68, 68, 0.3);
             }
+        }
 
-            .mic-button {
-                width: 100px;
-                height: 100px;
-            }
+        .mic-button svg {
+            width: 32px;
+            height: 32px;
+        }
 
-            .mic-button svg {
-                width: 40px;
-                height: 40px;
-            }
+        /* Progress ring around mic */
+        .progress-ring {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .progress-ring circle {
+            fill: none;
+            stroke-width: 3;
+            stroke-linecap: round;
+            transform: rotate(-90deg);
+            transform-origin: center;
+        }
+
+        .progress-ring .bg {
+            stroke: #334155;
+        }
+
+        .progress-ring .progress {
+            stroke: #3b82f6;
+            transition: stroke-dashoffset 0.1s;
         }
     </style>
 </head>
 
 <body>
-    <div class="container">
-        <header>
-            <h1>Whisper JAX</h1>
-            <p class="subtitle">Real-time speech recognition powered by JAX</p>
-        </header>
-
-        <div class="status-bar">
+    <header>
+        <h1>Whisper JAX</h1>
+        <div class="status">
             <div class="status-dot" id="statusDot"></div>
             <span id="statusText">Connecting...</span>
         </div>
+    </header>
 
-        <div class="mic-section">
+    <div class="transcript" id="transcript">
+        <p class="placeholder">Tap the microphone to start transcribing</p>
+    </div>
+
+    <div class="controls">
+        <select id="modelSelect" class="pill-select">
+            <option value="tiny">Tiny</option>
+            <option value="base">Base</option>
+            <option value="small">Small</option>
+            <option value="medium">Medium</option>
+            <option value="large-v3">Large v3</option>
+        </select>
+
+        <div class="mic-container">
+            <canvas class="wave-canvas" id="waveCanvas" width="240" height="240"></canvas>
+            <svg class="progress-ring" id="progressRing" viewBox="0 0 120 120">
+                <circle class="bg" cx="60" cy="60" r="54" />
+                <circle class="progress" cx="60" cy="60" r="54" stroke-dasharray="339.292"
+                    stroke-dashoffset="339.292" />
+            </svg>
             <button class="mic-button" id="micButton" disabled>
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"
                     stroke-width="2">
@@ -306,160 +322,256 @@
                         d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                 </svg>
             </button>
-            <p class="mic-label" id="micLabel">Click to start recording</p>
         </div>
 
-        <div class="audio-visualizer">
-            <canvas id="visualizer"></canvas>
-        </div>
-
-        <div class="transcript-section">
-            <div class="transcript-header">
-                <h2>Transcript</h2>
-                <button class="clear-button" id="clearButton">Clear</button>
-            </div>
-            <div class="transcript-content" id="transcript">
-                <p class="placeholder">Your transcription will appear here...</p>
-            </div>
-        </div>
-
-        <footer>
-            <p>Powered by <a href="https://github.com/mariogeiger/whisper-jax" target="_blank">Whisper JAX</a></p>
-        </footer>
+        <select id="langSelect" class="pill-select">
+            <option value="en">English</option>
+            <option value="fr">French</option>
+            <option value="de">German</option>
+            <option value="es">Spanish</option>
+            <option value="it">Italian</option>
+            <option value="pt">Portuguese</option>
+            <option value="nl">Dutch</option>
+            <option value="pl">Polish</option>
+            <option value="ru">Russian</option>
+            <option value="zh">Chinese</option>
+            <option value="ja">Japanese</option>
+            <option value="ko">Korean</option>
+        </select>
     </div>
 
     <script>
-        // DOM Elements
         const micButton = document.getElementById('micButton');
-        const micLabel = document.getElementById('micLabel');
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
         const transcript = document.getElementById('transcript');
-        const clearButton = document.getElementById('clearButton');
-        const canvas = document.getElementById('visualizer');
-        const ctx = canvas.getContext('2d');
+        const langSelect = document.getElementById('langSelect');
+        const modelSelect = document.getElementById('modelSelect');
+        const waveCanvas = document.getElementById('waveCanvas');
+        const progressRing = document.getElementById('progressRing');
+        const progressCircle = progressRing.querySelector('.progress');
 
-        // State
+        const CIRCLE_CIRCUMFERENCE = 2 * Math.PI * 54; // r=54
+        const COOKIE_DAYS = 365;
+
         let ws = null;
-        let mediaRecorder = null;
         let audioContext = null;
         let analyser = null;
         let isRecording = false;
         let animationId = null;
+        let currentSegmentEl = null;
 
-        // Initialize canvas
-        function initCanvas() {
-            const rect = canvas.parentElement.getBoundingClientRect();
-            canvas.width = rect.width * window.devicePixelRatio;
-            canvas.height = rect.height * window.devicePixelRatio;
-            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-            drawIdleWave();
+        // Cookie utilities
+        function setCookie(name, value, days = COOKIE_DAYS) {
+            const expires = new Date(Date.now() + days * 864e5).toUTCString();
+            document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Lax`;
         }
 
-        // Draw idle wave
-        function drawIdleWave() {
-            const width = canvas.width / window.devicePixelRatio;
-            const height = canvas.height / window.devicePixelRatio;
-            ctx.clearRect(0, 0, width, height);
-            ctx.strokeStyle = '#3b82f6';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(0, height / 2);
-            ctx.lineTo(width, height / 2);
-            ctx.stroke();
+        function getCookie(name) {
+            const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+            return match ? decodeURIComponent(match[2]) : null;
         }
 
-        // Draw audio waveform
-        function drawWaveform() {
-            if (!analyser) return;
+        // Load saved preferences
+        function loadPreferences() {
+            const savedModel = getCookie('whisper_model');
+            const savedLang = getCookie('whisper_lang');
 
-            const bufferLength = analyser.frequencyBinCount;
-            const dataArray = new Uint8Array(bufferLength);
-            analyser.getByteTimeDomainData(dataArray);
+            if (savedModel && modelSelect.querySelector(`option[value="${savedModel}"]`)) {
+                modelSelect.value = savedModel;
+            }
+            if (savedLang && langSelect.querySelector(`option[value="${savedLang}"]`)) {
+                langSelect.value = savedLang;
+            }
+        }
 
-            const width = canvas.width / window.devicePixelRatio;
-            const height = canvas.height / window.devicePixelRatio;
+        // WebSocket connection
+        function connect() {
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${location.host}/ws`);
+
+            ws.onopen = () => {
+                statusDot.className = 'status-dot connected';
+                statusText.textContent = 'Ready';
+                micButton.disabled = false;
+                modelSelect.disabled = false;
+                langSelect.disabled = false;
+
+                // Request saved model if different from server default
+                const savedModel = getCookie('whisper_model');
+                if (savedModel && savedModel !== 'tiny') {
+                    statusText.textContent = 'Loading model...';
+                    statusDot.className = 'status-dot loading';
+                    micButton.disabled = true;
+                    modelSelect.disabled = true;
+                    langSelect.disabled = true;
+                    ws.send(JSON.stringify({ type: 'model', value: savedModel }));
+                }
+
+                // Send saved language preference
+                ws.send(JSON.stringify({ type: 'lang', value: langSelect.value }));
+            };
+
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+
+                if (data.type === 'progress') {
+                    updateProgress(data.value);
+                } else if (data.type === 'processing') {
+                    showProcessing();
+                } else if (data.type === 'transcription') {
+                    finalize(data.text);
+                } else if (data.type === 'status') {
+                    statusText.textContent = data.message;
+
+                    if (data.message === 'Ready') {
+                        statusDot.className = 'status-dot connected';
+                        micButton.disabled = false;
+                        modelSelect.disabled = false;
+                        langSelect.disabled = false;
+                    } else if (data.message.includes('Loading') || data.message.includes('Warming')) {
+                        statusDot.className = 'status-dot loading';
+                        micButton.disabled = true;
+                        modelSelect.disabled = true;
+                        langSelect.disabled = true;
+                    }
+                }
+            };
+
+            ws.onclose = () => {
+                statusDot.className = 'status-dot';
+                statusText.textContent = 'Disconnected';
+                micButton.disabled = true;
+                modelSelect.disabled = true;
+                langSelect.disabled = true;
+                setTimeout(connect, 2000);
+            };
+        }
+
+        // Progress updates
+        function updateProgress(value) {
+            // Update progress ring
+            const offset = CIRCLE_CIRCUMFERENCE * (1 - value);
+            progressCircle.style.strokeDashoffset = offset;
+        }
+
+        function resetProgress() {
+            progressCircle.style.strokeDashoffset = CIRCLE_CIRCUMFERENCE;
+        }
+
+        // Segment management
+        function ensureSegment() {
+            if (!currentSegmentEl) {
+                const placeholder = transcript.querySelector('.placeholder');
+                if (placeholder) placeholder.remove();
+
+                currentSegmentEl = document.createElement('div');
+                currentSegmentEl.className = 'segment processing';
+                currentSegmentEl.textContent = 'Listening...';
+                transcript.prepend(currentSegmentEl);
+            }
+            return currentSegmentEl;
+        }
+
+        function showProcessing() {
+            const seg = ensureSegment();
+            seg.textContent = 'Processing...';
+            updateProgress(1);
+        }
+
+        function finalize(text) {
+            if (currentSegmentEl) {
+                currentSegmentEl.className = 'segment';
+                currentSegmentEl.textContent = text || '(no speech detected)';
+                currentSegmentEl = null;
+            }
+            resetProgress();
+            statusDot.className = 'status-dot connected';
+            statusText.textContent = 'Ready';
+        }
+
+        // Circular waveform visualization
+        function drawCircularWave() {
+            if (!analyser || !isRecording) return;
+
+            const ctx = waveCanvas.getContext('2d');
+            const width = waveCanvas.width;
+            const height = waveCanvas.height;
+            const centerX = width / 2;
+            const centerY = height / 2;
+            const baseRadius = 72; // Match mic button size
+            const maxAmplitude = 20;
+
+            const data = new Uint8Array(analyser.frequencyBinCount);
+            analyser.getByteTimeDomainData(data);
 
             ctx.clearRect(0, 0, width, height);
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = isRecording ? '#ef4444' : '#3b82f6';
+
+            // Draw circular waveform
             ctx.beginPath();
+            ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)';
+            ctx.lineWidth = 2;
 
-            const sliceWidth = width / bufferLength;
-            let x = 0;
+            const sliceCount = 64;
+            const sliceAngle = (2 * Math.PI) / sliceCount;
 
-            for (let i = 0; i < bufferLength; i++) {
-                const v = dataArray[i] / 128.0;
-                const y = (v * height) / 2;
+            for (let i = 0; i <= sliceCount; i++) {
+                const dataIndex = Math.floor((i / sliceCount) * data.length);
+                const amplitude = (data[dataIndex] - 128) / 128;
+                const radius = baseRadius + amplitude * maxAmplitude;
+                const angle = i * sliceAngle - Math.PI / 2;
+                const x = centerX + Math.cos(angle) * radius;
+                const y = centerY + Math.sin(angle) * radius;
 
                 if (i === 0) {
                     ctx.moveTo(x, y);
                 } else {
                     ctx.lineTo(x, y);
                 }
-                x += sliceWidth;
             }
 
-            ctx.lineTo(width, height / 2);
+            ctx.closePath();
             ctx.stroke();
 
-            if (isRecording) {
-                animationId = requestAnimationFrame(drawWaveform);
-            }
-        }
+            // Inner glow
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(239, 68, 68, 0.2)';
+            ctx.lineWidth = 8;
 
-        // Connect WebSocket
-        function connectWebSocket() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+            for (let i = 0; i <= sliceCount; i++) {
+                const dataIndex = Math.floor((i / sliceCount) * data.length);
+                const amplitude = (data[dataIndex] - 128) / 128;
+                const radius = baseRadius + amplitude * maxAmplitude * 0.5;
+                const angle = i * sliceAngle - Math.PI / 2;
+                const x = centerX + Math.cos(angle) * radius;
+                const y = centerY + Math.sin(angle) * radius;
 
-            ws.onopen = () => {
-                statusDot.classList.add('connected');
-                statusText.textContent = 'Ready';
-                micButton.disabled = false;
-            };
-
-            ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                if (data.type === 'transcription') {
-                    addTranscription(data.text);
-                } else if (data.type === 'status') {
-                    statusText.textContent = data.message;
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
                 }
-            };
-
-            ws.onclose = () => {
-                statusDot.classList.remove('connected');
-                statusText.textContent = 'Disconnected';
-                micButton.disabled = true;
-                setTimeout(connectWebSocket, 2000);
-            };
-
-            ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-            };
-        }
-
-        // Add transcription to display
-        function addTranscription(text) {
-            // Remove placeholder if present
-            const placeholder = transcript.querySelector('.placeholder');
-            if (placeholder) {
-                placeholder.remove();
             }
 
-            const segment = document.createElement('div');
-            segment.className = 'segment';
-            segment.textContent = text;
-            transcript.appendChild(segment);
+            ctx.closePath();
+            ctx.stroke();
 
-            // Scroll to bottom
-            transcript.scrollTop = transcript.scrollHeight;
+            animationId = requestAnimationFrame(drawCircularWave);
         }
 
-        // Start recording
+        function clearWave() {
+            const ctx = waveCanvas.getContext('2d');
+            ctx.clearRect(0, 0, waveCanvas.width, waveCanvas.height);
+        }
+
+        // Recording
         async function startRecording() {
             try {
+                // Send language selection to backend
+                if (ws?.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'lang', value: langSelect.value }));
+                }
+
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: {
                         channelCount: 1,
@@ -469,96 +581,100 @@
                     }
                 });
 
-                // Set up audio context for visualization
                 audioContext = new AudioContext({ sampleRate: 16000 });
                 analyser = audioContext.createAnalyser();
-                analyser.fftSize = 2048;
+                analyser.fftSize = 256;
+
                 const source = audioContext.createMediaStreamSource(stream);
                 source.connect(analyser);
 
-                // Set up ScriptProcessor to send raw PCM data
                 const processor = audioContext.createScriptProcessor(4096, 1, 1);
                 source.connect(processor);
                 processor.connect(audioContext.destination);
 
                 processor.onaudioprocess = (e) => {
                     if (!isRecording || ws.readyState !== WebSocket.OPEN) return;
-
-                    const inputData = e.inputBuffer.getChannelData(0);
-                    // Convert float32 to int16
-                    const pcmData = new Int16Array(inputData.length);
-                    for (let i = 0; i < inputData.length; i++) {
-                        const s = Math.max(-1, Math.min(1, inputData[i]));
-                        pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    const input = e.inputBuffer.getChannelData(0);
+                    const pcm = new Int16Array(input.length);
+                    for (let i = 0; i < input.length; i++) {
+                        pcm[i] = Math.max(-1, Math.min(1, input[i])) * 0x7FFF;
                     }
-                    ws.send(pcmData.buffer);
+                    ws.send(pcm.buffer);
                 };
 
                 isRecording = true;
                 micButton.classList.add('recording');
-                statusDot.classList.add('recording');
-                micLabel.textContent = 'Click to stop';
+                statusDot.className = 'status-dot recording';
                 statusText.textContent = 'Recording...';
 
-                drawWaveform();
+                ensureSegment();
+                drawCircularWave();
 
-            } catch (error) {
-                console.error('Error accessing microphone:', error);
+            } catch (err) {
+                console.error('Microphone access denied:', err);
                 statusText.textContent = 'Microphone access denied';
             }
         }
 
-        // Stop recording
         function stopRecording() {
             isRecording = false;
             micButton.classList.remove('recording');
-            statusDot.classList.remove('recording');
-            statusDot.classList.add('connected');
-            micLabel.textContent = 'Click to start recording';
+            statusDot.className = 'status-dot connected';
             statusText.textContent = 'Processing...';
 
             if (animationId) {
                 cancelAnimationFrame(animationId);
+                animationId = null;
             }
+
+            clearWave();
 
             if (audioContext) {
                 audioContext.close();
                 audioContext = null;
+                analyser = null;
             }
 
-            // Flush remaining audio
-            if (ws && ws.readyState === WebSocket.OPEN) {
+            if (currentSegmentEl) {
+                showProcessing();
+            }
+
+            if (ws?.readyState === WebSocket.OPEN) {
                 ws.send('flush');
             }
-
-            drawIdleWave();
         }
 
-        // Toggle recording
-        function toggleRecording() {
+        // Event handlers
+        micButton.onclick = () => {
             if (isRecording) {
                 stopRecording();
             } else {
                 startRecording();
             }
-        }
+        };
 
-        // Clear transcript
-        function clearTranscript() {
-            transcript.innerHTML = '<p class="placeholder">Your transcription will appear here...</p>';
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send('clear');
+        langSelect.onchange = () => {
+            setCookie('whisper_lang', langSelect.value);
+            if (ws?.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'lang', value: langSelect.value }));
             }
-        }
+        };
 
-        // Event listeners
-        micButton.addEventListener('click', toggleRecording);
-        clearButton.addEventListener('click', clearTranscript);
-        window.addEventListener('resize', initCanvas);
+        modelSelect.onchange = () => {
+            setCookie('whisper_model', modelSelect.value);
+            if (ws?.readyState === WebSocket.OPEN) {
+                statusText.textContent = 'Loading model...';
+                statusDot.className = 'status-dot loading';
+                micButton.disabled = true;
+                modelSelect.disabled = true;
+                langSelect.disabled = true;
+                ws.send(JSON.stringify({ type: 'model', value: modelSelect.value }));
+            }
+        };
 
         // Initialize
-        initCanvas();
-        connectWebSocket();
+        loadPreferences();
+        connect();
     </script>
 </body>
 

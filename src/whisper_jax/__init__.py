@@ -3,6 +3,8 @@
 from whisper_jax.model import (
     WhisperModel,
     create_whisper_base,
+    create_whisper_large,
+    create_whisper_medium,
     create_whisper_small,
     create_whisper_tiny,
 )
@@ -19,6 +21,8 @@ __all__ = [
     "WhisperModel",
     "WhisperTokenizer",
     "create_whisper_base",
+    "create_whisper_large",
+    "create_whisper_medium",
     "create_whisper_small",
     "create_whisper_tiny",
     "load_pretrained_weights",

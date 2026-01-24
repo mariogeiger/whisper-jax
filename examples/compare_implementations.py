@@ -131,7 +131,9 @@ def main():
     print(f"\n{'=' * 80}\nPREDICTED TOKENS\n{'=' * 80}")
     print(f"HF tokens:  {hf_tokens}")
     print(f"JAX tokens: {jax_tokens}")
-    print(f"{'✓' if tokens_match else '✗'} Predicted tokens {'match' if tokens_match else 'DIFFER'}")
+    print(
+        f"{'✓' if tokens_match else '✗'} Predicted tokens {'match' if tokens_match else 'DIFFER'}"
+    )
 
     # Summary
     print(f"\n{'=' * 80}\nSUMMARY\n{'=' * 80}")

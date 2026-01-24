@@ -256,3 +256,31 @@ def create_whisper_small(rngs: nnx.Rngs | None = None) -> WhisperModel:
         decoder_ffn_dim=3072,
         rngs=rngs or nnx.Rngs(0),
     )
+
+
+def create_whisper_medium(rngs: nnx.Rngs | None = None) -> WhisperModel:
+    """Create Whisper medium model (769M parameters)."""
+    return WhisperModel(
+        embed_dim=1024,
+        encoder_layers=24,
+        decoder_layers=24,
+        encoder_attention_heads=16,
+        decoder_attention_heads=16,
+        encoder_ffn_dim=4096,
+        decoder_ffn_dim=4096,
+        rngs=rngs or nnx.Rngs(0),
+    )
+
+
+def create_whisper_large(rngs: nnx.Rngs | None = None) -> WhisperModel:
+    """Create Whisper large model (1.5B parameters)."""
+    return WhisperModel(
+        embed_dim=1280,
+        encoder_layers=32,
+        decoder_layers=32,
+        encoder_attention_heads=20,
+        decoder_attention_heads=20,
+        encoder_ffn_dim=5120,
+        decoder_ffn_dim=5120,
+        rngs=rngs or nnx.Rngs(0),
+    )
