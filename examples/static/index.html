@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whisper JAX - Speech to Text</title>
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-tertiary: #334155;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --accent-glow: rgba(59, 130, 246, 0.4);
+            --success: #22c55e;
+            --danger: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, var(--accent), #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+
+        .status-bar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            background: var(--bg-secondary);
+            border-radius: 2rem;
+            margin-bottom: 2rem;
+            font-size: 0.9rem;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--text-secondary);
+            transition: background 0.3s;
+        }
+
+        .status-dot.connected {
+            background: var(--success);
+        }
+
+        .status-dot.recording {
+            background: var(--danger);
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.7;
+                transform: scale(1.2);
+            }
+        }
+
+        .mic-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .mic-button {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: none;
+            background: linear-gradient(135deg, var(--accent), #6366f1);
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 20px var(--accent-glow);
+        }
+
+        .mic-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 30px var(--accent-glow);
+        }
+
+        .mic-button:active {
+            transform: scale(0.98);
+        }
+
+        .mic-button.recording {
+            background: linear-gradient(135deg, var(--danger), #f97316);
+            animation: glow 1.5s ease-in-out infinite;
+        }
+
+        @keyframes glow {
+
+            0%,
+            100% {
+                box-shadow: 0 4px 20px rgba(239, 68, 68, 0.4);
+            }
+
+            50% {
+                box-shadow: 0 4px 40px rgba(239, 68, 68, 0.6);
+            }
+        }
+
+        .mic-button svg {
+            width: 48px;
+            height: 48px;
+        }
+
+        .mic-label {
+            margin-top: 1rem;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .audio-visualizer {
+            width: 100%;
+            height: 60px;
+            background: var(--bg-secondary);
+            border-radius: 0.5rem;
+            margin-bottom: 2rem;
+            overflow: hidden;
+        }
+
+        .audio-visualizer canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        .transcript-section {
+            background: var(--bg-secondary);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            min-height: 200px;
+        }
+
+        .transcript-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid var(--bg-tertiary);
+        }
+
+        .transcript-header h2 {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .clear-button {
+            padding: 0.4rem 0.8rem;
+            background: var(--bg-tertiary);
+            border: none;
+            border-radius: 0.5rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        .clear-button:hover {
+            background: var(--accent);
+            color: white;
+        }
+
+        .transcript-content {
+            font-size: 1.1rem;
+            line-height: 1.8;
+            color: var(--text-primary);
+            min-height: 120px;
+        }
+
+        .transcript-content .segment {
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--bg-tertiary);
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        .transcript-content .segment:last-child {
+            border-bottom: none;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .transcript-content .placeholder {
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+
+        footer {
+            margin-top: 3rem;
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+
+        footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 1rem;
+            }
+
+            h1 {
+                font-size: 1.8rem;
+            }
+
+            .mic-button {
+                width: 100px;
+                height: 100px;
+            }
+
+            .mic-button svg {
+                width: 40px;
+                height: 40px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>Whisper JAX</h1>
+            <p class="subtitle">Real-time speech recognition powered by JAX</p>
+        </header>
+
+        <div class="status-bar">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="statusText">Connecting...</span>
+        </div>
+
+        <div class="mic-section">
+            <button class="mic-button" id="micButton" disabled>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                    stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+            </button>
+            <p class="mic-label" id="micLabel">Click to start recording</p>
+        </div>
+
+        <div class="audio-visualizer">
+            <canvas id="visualizer"></canvas>
+        </div>
+
+        <div class="transcript-section">
+            <div class="transcript-header">
+                <h2>Transcript</h2>
+                <button class="clear-button" id="clearButton">Clear</button>
+            </div>
+            <div class="transcript-content" id="transcript">
+                <p class="placeholder">Your transcription will appear here...</p>
+            </div>
+        </div>
+
+        <footer>
+            <p>Powered by <a href="https://github.com/mariogeiger/whisper-jax" target="_blank">Whisper JAX</a></p>
+        </footer>
+    </div>
+
+    <script>
+        // DOM Elements
+        const micButton = document.getElementById('micButton');
+        const micLabel = document.getElementById('micLabel');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const transcript = document.getElementById('transcript');
+        const clearButton = document.getElementById('clearButton');
+        const canvas = document.getElementById('visualizer');
+        const ctx = canvas.getContext('2d');
+
+        // State
+        let ws = null;
+        let mediaRecorder = null;
+        let audioContext = null;
+        let analyser = null;
+        let isRecording = false;
+        let animationId = null;
+
+        // Initialize canvas
+        function initCanvas() {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = rect.width * window.devicePixelRatio;
+            canvas.height = rect.height * window.devicePixelRatio;
+            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+            drawIdleWave();
+        }
+
+        // Draw idle wave
+        function drawIdleWave() {
+            const width = canvas.width / window.devicePixelRatio;
+            const height = canvas.height / window.devicePixelRatio;
+            ctx.clearRect(0, 0, width, height);
+            ctx.strokeStyle = '#3b82f6';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, height / 2);
+            ctx.lineTo(width, height / 2);
+            ctx.stroke();
+        }
+
+        // Draw audio waveform
+        function drawWaveform() {
+            if (!analyser) return;
+
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteTimeDomainData(dataArray);
+
+            const width = canvas.width / window.devicePixelRatio;
+            const height = canvas.height / window.devicePixelRatio;
+
+            ctx.clearRect(0, 0, width, height);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = isRecording ? '#ef4444' : '#3b82f6';
+            ctx.beginPath();
+
+            const sliceWidth = width / bufferLength;
+            let x = 0;
+
+            for (let i = 0; i < bufferLength; i++) {
+                const v = dataArray[i] / 128.0;
+                const y = (v * height) / 2;
+
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+                x += sliceWidth;
+            }
+
+            ctx.lineTo(width, height / 2);
+            ctx.stroke();
+
+            if (isRecording) {
+                animationId = requestAnimationFrame(drawWaveform);
+            }
+        }
+
+        // Connect WebSocket
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+
+            ws.onopen = () => {
+                statusDot.classList.add('connected');
+                statusText.textContent = 'Ready';
+                micButton.disabled = false;
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'transcription') {
+                    addTranscription(data.text);
+                } else if (data.type === 'status') {
+                    statusText.textContent = data.message;
+                }
+            };
+
+            ws.onclose = () => {
+                statusDot.classList.remove('connected');
+                statusText.textContent = 'Disconnected';
+                micButton.disabled = true;
+                setTimeout(connectWebSocket, 2000);
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+        }
+
+        // Add transcription to display
+        function addTranscription(text) {
+            // Remove placeholder if present
+            const placeholder = transcript.querySelector('.placeholder');
+            if (placeholder) {
+                placeholder.remove();
+            }
+
+            const segment = document.createElement('div');
+            segment.className = 'segment';
+            segment.textContent = text;
+            transcript.appendChild(segment);
+
+            // Scroll to bottom
+            transcript.scrollTop = transcript.scrollHeight;
+        }
+
+        // Start recording
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        channelCount: 1,
+                        sampleRate: 16000,
+                        echoCancellation: true,
+                        noiseSuppression: true
+                    }
+                });
+
+                // Set up audio context for visualization
+                audioContext = new AudioContext({ sampleRate: 16000 });
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 2048;
+                const source = audioContext.createMediaStreamSource(stream);
+                source.connect(analyser);
+
+                // Set up ScriptProcessor to send raw PCM data
+                const processor = audioContext.createScriptProcessor(4096, 1, 1);
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+
+                processor.onaudioprocess = (e) => {
+                    if (!isRecording || ws.readyState !== WebSocket.OPEN) return;
+
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    // Convert float32 to int16
+                    const pcmData = new Int16Array(inputData.length);
+                    for (let i = 0; i < inputData.length; i++) {
+                        const s = Math.max(-1, Math.min(1, inputData[i]));
+                        pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    }
+                    ws.send(pcmData.buffer);
+                };
+
+                isRecording = true;
+                micButton.classList.add('recording');
+                statusDot.classList.add('recording');
+                micLabel.textContent = 'Click to stop';
+                statusText.textContent = 'Recording...';
+
+                drawWaveform();
+
+            } catch (error) {
+                console.error('Error accessing microphone:', error);
+                statusText.textContent = 'Microphone access denied';
+            }
+        }
+
+        // Stop recording
+        function stopRecording() {
+            isRecording = false;
+            micButton.classList.remove('recording');
+            statusDot.classList.remove('recording');
+            statusDot.classList.add('connected');
+            micLabel.textContent = 'Click to start recording';
+            statusText.textContent = 'Processing...';
+
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+            }
+
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+
+            // Flush remaining audio
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send('flush');
+            }
+
+            drawIdleWave();
+        }
+
+        // Toggle recording
+        function toggleRecording() {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                startRecording();
+            }
+        }
+
+        // Clear transcript
+        function clearTranscript() {
+            transcript.innerHTML = '<p class="placeholder">Your transcription will appear here...</p>';
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send('clear');
+            }
+        }
+
+        // Event listeners
+        micButton.addEventListener('click', toggleRecording);
+        clearButton.addEventListener('click', clearTranscript);
+        window.addEventListener('resize', initCanvas);
+
+        // Initialize
+        initCanvas();
+        connectWebSocket();
+    </script>
+</body>
+
+</html>
