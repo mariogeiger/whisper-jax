@@ -2,96 +2,22 @@
 
 This module implements the Dynamic Time Warping (DTW) approach from OpenAI's Whisper
 to extract word-level timestamps from cross-attention patterns.
-
-Optimizations:
-- JAX JIT-compiled forward pass (encoder + decoder + attention processing)
-- Numba JIT-compiled DTW algorithm
 """
 
-import base64
-import gzip
 import string
 from dataclasses import dataclass
-from functools import lru_cache
+from itertools import pairwise
 
-import jax
 import jax.numpy as jnp
 import numba
 import numpy as np
 from scipy.ndimage import median_filter
 
-# Alignment heads for each model - base85-encoded boolean arrays
-_ALIGNMENT_HEADS = {
-    "tiny.en": b"ABzY8J1N>@0{>%R00Bk>$p{7v037`oCl~+#00",
-    "tiny": b"ABzY8bu8Lr0{>%RKn9Fp%m@SkK7Kt=7ytkO",
-    "base.en": b"ABzY8;40c<0{>%RzzG;p*o+Vo09|#PsxSZm00",
-    "base": b"ABzY8KQ!870{>%RzyTQH3`Q^yNP!>##QT-<FaQ7m",
-    "small.en": b"ABzY8>?_)10{>%RpeA61k&I|OI3I$65C{;;pbCHh0B{qLQ;+}v00",
-    "small": b"ABzY8DmU6=0{>%Rpa?J`kvJ6qF(V^F86#Xh7JUGMK}P<N0000",
-    "medium.en": b"ABzY8usPae0{>%R7<zz_OvQ{)4kMa0BMw6u5rT}kRKX;$NfYBv00*Hl@qhsU00",
-    "medium": b"ABzY8B0Jh+0{>%R7}kK1fFL7w6%<-Pf*t^=N)Qr&0RR9",
-    "large-v1": b"ABzY8r9j$a0{>%R7#4sLmoOs{s)o3~84-RPdcFk!JR<kSfC2yj",
-    "large-v2": b"ABzY8zd+h!0{>%R7=D0pU<_bnWW*tkYAhobTNnu$jnkEkXqp)j;w1Tzk)UH3X%SZd&fFZ2fC2yj",
-    "large-v3": b"ABzY8gWO1E0{>%R7(9S+Kn!D~%ngiGaR?*L!iJG9p-nab0JQ=-{D1-g00",
-}
+from whisper_jax.core.audio import HOP_LENGTH, SAMPLE_RATE
+from whisper_jax.core.decode import create_alignment_fn, get_alignment_mask
+from whisper_jax.utils.tokenizer import EOT, LANG_TOKENS, NO_TIMESTAMPS, SOT, TRANSCRIBE
 
-_MODEL_DIMS = {
-    "tiny": {"n_text_layer": 4, "n_text_head": 6},
-    "tiny.en": {"n_text_layer": 4, "n_text_head": 6},
-    "base": {"n_text_layer": 6, "n_text_head": 8},
-    "base.en": {"n_text_layer": 6, "n_text_head": 8},
-    "small": {"n_text_layer": 12, "n_text_head": 12},
-    "small.en": {"n_text_layer": 12, "n_text_head": 12},
-    "medium": {"n_text_layer": 24, "n_text_head": 16},
-    "medium.en": {"n_text_layer": 24, "n_text_head": 16},
-    "large-v1": {"n_text_layer": 32, "n_text_head": 20},
-    "large-v2": {"n_text_layer": 32, "n_text_head": 20},
-    "large-v3": {"n_text_layer": 32, "n_text_head": 20},
-}
-
-SAMPLE_RATE = 16000
-HOP_LENGTH = 160
 TOKENS_PER_SECOND = SAMPLE_RATE / HOP_LENGTH / 2
-
-
-@lru_cache(maxsize=16)
-def decode_alignment_heads(model_name: str) -> tuple[tuple[int, int], ...]:
-    """Decode alignment heads. Returns tuple of (layer, head) pairs."""
-    if model_name not in _ALIGNMENT_HEADS:
-        dims = _MODEL_DIMS.get(model_name, {"n_text_layer": 4, "n_text_head": 6})
-        n_layers, n_heads = dims["n_text_layer"], dims["n_text_head"]
-        return tuple(
-            (layer, head)
-            for layer in range(n_layers // 2, n_layers)
-            for head in range(n_heads)
-        )
-
-    data = _ALIGNMENT_HEADS[model_name]
-    dims = _MODEL_DIMS[model_name]
-    n_layers, n_heads = dims["n_text_layer"], dims["n_text_head"]
-
-    array = np.frombuffer(
-        gzip.decompress(base64.b85decode(data)), dtype=bool
-    ).reshape(n_layers, n_heads)
-
-    return tuple(
-        (layer, head)
-        for layer in range(n_layers)
-        for head in range(n_heads)
-        if array[layer, head]
-    )
-
-
-def get_alignment_mask(model_name: str) -> jnp.ndarray:
-    """Get alignment head mask as JAX array for JIT compatibility."""
-    dims = _MODEL_DIMS.get(model_name, {"n_text_layer": 4, "n_text_head": 6})
-    n_layers, n_heads = dims["n_text_layer"], dims["n_text_head"]
-
-    mask = np.zeros((n_layers, n_heads), dtype=np.float32)
-    for layer, head in decode_alignment_heads(model_name):
-        mask[layer, head] = 1.0
-
-    return jnp.array(mask)
 
 
 @dataclass
@@ -152,9 +78,7 @@ def dtw(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return result[:, 0].copy(), result[:, 1].copy()
 
 
-def split_tokens_to_words(
-    tokens: list[int], tokenizer
-) -> tuple[list[str], list[list[int]]]:
+def split_tokens_to_words(tokens: list[int], tokenizer) -> tuple[list[str], list[list[int]]]:
     """Split token sequence into words."""
     if not tokens:
         return [], []
@@ -168,7 +92,7 @@ def split_tokens_to_words(
         decoded = tokenizer.decode(current_tokens)
 
         if i < len(tokens) - 1:
-            next_decoded = tokenizer.decode(current_tokens + [tokens[i + 1]])
+            next_decoded = tokenizer.decode([*current_tokens, tokens[i + 1]])
             if len(next_decoded) > len(decoded):
                 extra = next_decoded[len(decoded) :]
                 if extra.startswith(" ") or decoded.rstrip() in string.punctuation:
@@ -182,58 +106,6 @@ def split_tokens_to_words(
                 word_tokens.append(current_tokens.copy())
 
     return words, word_tokens
-
-
-def create_alignment_fn(model):
-    """Create a JIT-compiled alignment function for the given model.
-
-    This captures the model components in a closure for optimal JIT performance.
-    Call this once per model, then reuse the returned function.
-    """
-    from .processor import log_mel_spectrogram
-
-    encoder = model.encoder
-    decoder = model.decoder
-    lm_head = model.lm_head
-
-    @jax.jit
-    def compute_alignment_data(
-        audio: jax.Array, tokens: jax.Array, alignment_mask: jax.Array
-    ) -> tuple[jax.Array, jax.Array, int]:
-        """JIT-compiled forward pass + attention processing.
-
-        Returns:
-            token_probs: (seq_len, vocab_size)
-            attention_matrix: (seq_len, encoder_len) processed for DTW
-            num_frames: encoder output length
-        """
-        mel = log_mel_spectrogram(audio)
-        enc_out = encoder(mel, deterministic=True)
-        dec_out, cross_attns = decoder(tokens, enc_out, deterministic=True)
-        logits = lm_head(dec_out)
-        probs = jax.nn.softmax(logits, axis=-1)
-
-        # Stack cross-attention: (num_layers, num_heads, seq_len, enc_len)
-        all_attn = jnp.stack([attn[0] for attn in cross_attns], axis=0)
-
-        # Weighted mean using alignment mask
-        mask = alignment_mask[:, :, None, None]
-        masked_attn = all_attn * mask
-        weights = masked_attn.sum(axis=(0, 1)) / (mask.sum() + 1e-8)
-
-        # Softmax per position
-        weights = weights - weights.max(axis=-1, keepdims=True)
-        weights = jnp.exp(weights)
-        weights = weights / (weights.sum(axis=-1, keepdims=True) + 1e-8)
-
-        # Z-score normalization
-        mean = weights.mean(axis=-1, keepdims=True)
-        std = weights.std(axis=-1, keepdims=True)
-        weights = (weights - mean) / (std + 1e-8)
-
-        return probs[0], weights, enc_out.shape[1]
-
-    return compute_alignment_data
 
 
 def find_word_alignments(
@@ -285,14 +157,14 @@ def find_word_alignments(
     if token_probs is not None:
         word_probs = [
             float(np.mean(token_probs[i:j])) if j > i else 0.0
-            for i, j in zip(word_boundaries[:-1], word_boundaries[1:])
+            for i, j in pairwise(word_boundaries)
         ]
     else:
         word_probs = [1.0] * len(words)
 
     return [
         WordTiming(word=word, start=float(start), end=float(end), probability=prob)
-        for word, start, end, prob in zip(words, start_times, end_times, word_probs)
+        for word, start, end, prob in zip(words, start_times, end_times, word_probs, strict=True)
         if word.strip()
     ]
 
@@ -303,10 +175,24 @@ def get_word_timestamps(
     audio: np.ndarray,
     text_tokens: list[int],
     model_name: str = "tiny",
+    language: str = "en",
     medfilt_width: int = 7,
     _alignment_fn=None,
 ) -> list[WordTiming]:
     """Get word-level timestamps for transcribed text.
+
+    Args:
+        model: WhisperModel instance
+        tokenizer: WhisperTokenizer instance
+        audio: Audio samples (float32, 16kHz)
+        text_tokens: List of token IDs from transcription
+        model_name: Model size name for alignment heads
+        language: Language code (e.g., "en", "fr") for correct prompt
+        medfilt_width: Median filter width for smoothing
+        _alignment_fn: Optional pre-created alignment function for speed
+
+    Returns:
+        List of WordTiming objects with word-level timestamps
 
     For best performance, create the alignment function once with
     create_alignment_fn(model) and pass it as _alignment_fn.
@@ -321,15 +207,14 @@ def get_word_timestamps(
     # Get alignment mask
     alignment_mask = get_alignment_mask(model_name)
 
-    # Build token sequence
-    prompt = [50258, 50259, 50359, 50363]
-    full_tokens = prompt + text_tokens + [50257]
+    # Build token sequence with correct language token
+    lang_token = LANG_TOKENS.get(language, LANG_TOKENS["en"])
+    prompt = [SOT, lang_token, TRANSCRIBE, NO_TIMESTAMPS]
+    full_tokens = prompt + text_tokens + [EOT]
     tokens_jax = jnp.array([full_tokens])
 
     # Run JIT-compiled forward pass
-    probs, attn_matrix, num_frames = _alignment_fn(
-        jnp.array(audio), tokens_jax, alignment_mask
-    )
+    probs, attn_matrix, num_frames = _alignment_fn(audio, tokens_jax, alignment_mask)
 
     # Extract text token probabilities
     prompt_len = len(prompt)

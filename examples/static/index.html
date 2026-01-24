@@ -564,6 +564,22 @@
             ctx.clearRect(0, 0, waveCanvas.width, waveCanvas.height);
         }
 
+        // Resample audio from source rate to target rate
+        function resample(input, srcRate, dstRate) {
+            if (srcRate === dstRate) return input;
+            const ratio = srcRate / dstRate;
+            const outputLength = Math.round(input.length / ratio);
+            const output = new Float32Array(outputLength);
+            for (let i = 0; i < outputLength; i++) {
+                const srcIndex = i * ratio;
+                const low = Math.floor(srcIndex);
+                const high = Math.min(low + 1, input.length - 1);
+                const t = srcIndex - low;
+                output[i] = input[low] * (1 - t) + input[high] * t;
+            }
+            return output;
+        }
+
         // Recording
         async function startRecording() {
             try {
@@ -575,13 +591,15 @@
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: {
                         channelCount: 1,
-                        sampleRate: 16000,
                         echoCancellation: true,
                         noiseSuppression: true
                     }
                 });
 
-                audioContext = new AudioContext({ sampleRate: 16000 });
+                // Use browser's native sample rate, resample to 16kHz when sending
+                audioContext = new AudioContext();
+                const nativeSampleRate = audioContext.sampleRate;
+
                 analyser = audioContext.createAnalyser();
                 analyser.fftSize = 256;
 
@@ -595,9 +613,11 @@
                 processor.onaudioprocess = (e) => {
                     if (!isRecording || ws.readyState !== WebSocket.OPEN) return;
                     const input = e.inputBuffer.getChannelData(0);
-                    const pcm = new Int16Array(input.length);
-                    for (let i = 0; i < input.length; i++) {
-                        pcm[i] = Math.max(-1, Math.min(1, input[i])) * 0x7FFF;
+                    // Resample to 16kHz
+                    const resampled = resample(input, nativeSampleRate, 16000);
+                    const pcm = new Int16Array(resampled.length);
+                    for (let i = 0; i < resampled.length; i++) {
+                        pcm[i] = Math.max(-1, Math.min(1, resampled[i])) * 0x7FFF;
                     }
                     ws.send(pcm.buffer);
                 };

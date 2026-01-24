@@ -1,70 +1,91 @@
-# Whisper JAX 🎙️
+# Whisper JAX
 
 **A clean, simple JAX implementation of OpenAI's Whisper speech recognition model.**
 
-Pure JAX/Flax NNX implementation that's easy to understand, modify, and use. Perfect for research and learning!
+Pure JAX/Flax NNX implementation that's easy to understand, modify, and use.
 
 ---
 
 ## Why Whisper JAX?
 
-- ✨ **Simple & Clean**: ~400 lines of readable code
-- 🚀 **Fast**: JAX's JIT compilation for speed
-- 🔧 **Hackable**: Easy to modify and experiment with
-- 📦 **Lightweight**: Minimal dependencies
-- ✅ **Verified**: Matches PyTorch reference implementation
+- **Simple API**: Just `Whisper.load()` and `transcribe()`
+- **Fast**: JAX's JIT compilation for speed
+- **Hackable**: Clean, readable code
+- **Word Timestamps**: Built-in word-level alignment
+- **Lightweight**: Minimal dependencies
 
 ---
 
 ## Installation
 
 Install directly from GitHub:
+
 ```bash
 pip install git+https://github.com/mariogeiger/whisper-jax.git
 ```
 
+With word timestamp support (requires numba and scipy):
+
+```bash
+pip install "whisper-jax[alignment] @ git+https://github.com/mariogeiger/whisper-jax.git"
+```
+
 Or clone and install locally:
+
 ```bash
 git clone https://github.com/mariogeiger/whisper-jax.git
 cd whisper-jax
-pip install -e .
-```
-
-For development with all tools:
-```bash
-pip install -e ".[dev]"
+pip install -e ".[alignment]"
 ```
 
 ---
 
 ## Quick Start
 
-### Load and Run Pretrained Whisper
-
 ```python
-import jax.numpy as jnp
-from whisper_jax import create_whisper_tiny, load_pretrained_weights
+from whisper_jax import Whisper
 
-# Create model and load pretrained weights
-model = create_whisper_tiny()
-load_pretrained_weights(model, "openai/whisper-tiny")
+# Load a model
+whisper = Whisper.load("tiny")  # or "base", "small", "medium", "large-v3"
 
-# Prepare inputs
-input_features = jnp.ones((1, 80, 3000))  # Mel spectrogram
-decoder_ids = jnp.array([[50258, 50259, 50359, 50363]])  # Token IDs
-
-# Run inference
-logits = model(input_features, decoder_ids, deterministic=True)
-print(f"Output shape: {logits.shape}")  # (1, 4, 51865)
+# Transcribe audio
+result = whisper.transcribe("audio.mp3")
+print(result.text)
 ```
 
-### Available Models
+### Word-Level Timestamps
 
-| Model | Parameters | Command |
-|-------|-----------|---------|
-| Tiny  | 39M       | `create_whisper_tiny()` |
-| Base  | 74M       | `create_whisper_base()` |
-| Small | 244M      | `create_whisper_small()` |
+```python
+from whisper_jax import Whisper
+
+whisper = Whisper.load("tiny")
+result = whisper.transcribe("audio.mp3", word_timestamps=True)
+
+for word in result.words:
+    print(f"[{word.start:.2f}s - {word.end:.2f}s] {word.word}")
+```
+
+### Multiple Languages
+
+```python
+# Transcribe French audio
+result = whisper.transcribe("french_audio.mp3", language="fr")
+
+# See available languages
+print(whisper.available_languages)
+```
+
+---
+
+## Available Models
+
+| Model | Parameters | Usage |
+|-------|-----------|-------|
+| tiny  | 39M       | `Whisper.load("tiny")` |
+| base  | 74M       | `Whisper.load("base")` |
+| small | 244M      | `Whisper.load("small")` |
+| medium | 769M     | `Whisper.load("medium")` |
+| large-v3 | 1.5B   | `Whisper.load("large-v3")` |
 
 ---
 
@@ -72,12 +93,42 @@ print(f"Output shape: {logits.shape}")  # (1, 4, 51865)
 
 Check out the `examples/` folder:
 
-- **`compare_implementations.py`** - Compare with PyTorch reference
-- **`example_usage.py`** - Complete usage examples
+- **`word_timestamps.py`** - Transcribe with word-level timestamps, output SRT/JSON
+- **`demo_server.py`** - Real-time browser-based transcription demo
+- **`compare_implementations.py`** - Verify outputs match PyTorch reference
 
-Run the comparison to verify outputs match PyTorch:
 ```bash
-python examples/compare_implementations.py
+# Transcribe with word timestamps
+python examples/word_timestamps.py audio.mp3 --model base
+
+# Generate SRT subtitles
+python examples/word_timestamps.py audio.mp3 --format srt > subtitles.srt
+
+# Run the web demo
+pip install ".[demo]"
+python examples/demo_server.py
+```
+
+---
+
+## Advanced Usage
+
+For users who need lower-level access:
+
+```python
+from whisper_jax import (
+    WhisperModel,
+    create_whisper_tiny,
+    load_pretrained_weights,
+    log_mel_spectrogram,
+)
+
+# Create model manually
+model = create_whisper_tiny()
+load_pretrained_weights(model, "openai/whisper-tiny")
+
+# Process audio
+mel = log_mel_spectrogram(audio_array)
 ```
 
 ---
@@ -86,9 +137,30 @@ python examples/compare_implementations.py
 
 - **Pure JAX/Flax NNX**: Modern, functional API
 - **Load HuggingFace weights**: Use pretrained OpenAI models
-- **Clean architecture**: Easy to read and understand
-- **Type hints**: Full typing support with `jax.Array`
-- **Verified**: Outputs match PyTorch within float32 precision
+- **Word-level timestamps**: DTW-based alignment on cross-attention
+- **Chunking**: Automatic handling of long audio (>30s)
+- **Clean architecture**: Separate pure JAX code from utilities
+
+---
+
+## Project Structure
+
+```
+src/whisper_jax/
+    __init__.py      # Public API
+    pipeline.py      # High-level Whisper class
+    
+    core/            # Pure JAX (JIT-compatible)
+        model.py     # Neural network layers
+        audio.py     # Mel spectrogram
+        decode.py    # Transcription/alignment functions
+    
+    utils/           # Non-JAX helpers
+        tokenizer.py # Tokenizer
+        weights.py   # Weight loading
+        dtw.py       # Word alignment (numba/scipy)
+        audio_io.py  # Audio file loading
+```
 
 ---
 

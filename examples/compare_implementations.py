@@ -13,8 +13,12 @@ import torch
 from flax import nnx
 from transformers import WhisperForConditionalGeneration as HFWhisperModel
 
-from whisper_jax import create_whisper_base, create_whisper_small, create_whisper_tiny
-from whisper_jax.weight_loader import load_pretrained_weights
+from whisper_jax import (
+    create_whisper_base,
+    create_whisper_small,
+    create_whisper_tiny,
+    load_pretrained_weights,
+)
 
 # Set print options for cleaner output
 np.set_printoptions(precision=4, suppress=True, linewidth=100)

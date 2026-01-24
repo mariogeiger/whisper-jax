@@ -45,11 +45,15 @@ weights = [
     "huggingface_hub>=0.20.0",
     "safetensors>=0.4.0",
 ]
+alignment = [
+    "numba>=0.58.0",
+    "scipy>=1.10.0",
+]
 demo = [
     "fastapi>=0.100.0",
     "uvicorn>=0.20.0",
     "python-multipart>=0.0.6",
-    "huggingface_hub>=0.20.0",
+    "whisper-jax[weights]",
 ]
 dev = [
     "pytest>=7.0",
@@ -58,15 +62,7 @@ dev = [
     "mypy>=1.0",
 ]
 all = [
-    "huggingface_hub>=0.20.0",
-    "safetensors>=0.4.0",
-    "fastapi>=0.100.0",
-    "uvicorn>=0.20.0",
-    "python-multipart>=0.0.6",
-    "pytest>=7.0",
-    "pytest-cov>=4.0",
-    "ruff>=0.1.0",
-    "mypy>=1.0",
+    "whisper-jax[weights,alignment,demo,dev]",
 ]
 
 [project.urls]
@@ -135,6 +131,8 @@ module = [
     "flax.*",
     "huggingface_hub.*",
     "safetensors.*",
+    "numba.*",
+    "scipy.*",
 ]
 ignore_missing_imports = true
 
