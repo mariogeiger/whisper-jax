@@ -1,64 +1,26 @@
-[build-system]
-requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "whisper-nnx"
+name = "whisper-jax"
 version = "0.1.0"
-description = "Pure JAX Whisper implementation using Flax NNX"
-readme = "README.md"
-requires-python = ">=3.9"
-license = {text = "MIT"}
-authors = [
-    {name = "Whisper NNX Contributors"}
-]
-keywords = ["whisper", "speech-recognition", "jax", "flax", "nnx", "transformer"]
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
-    "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
-]
-
-dependencies = [
-    "jax>=0.9.0",
-    "jaxlib>=0.9.0",
-    "flax>=0.12.2",
-    "transformers>=4.27.4,<4.35.0",
-    "numpy>=2.0",
-    "huggingface-hub",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0",
-    "black>=23.0",
-    "ruff>=0.1.0",
-]
-
-[project.urls]
-Homepage = "https://github.com/mariogeiger/whisper-jax"
-Repository = "https://github.com/mariogeiger/whisper-jax"
-Documentation = "https://github.com/mariogeiger/whisper-jax/blob/main/README.md"
-
-[tool.black]
-line-length = 119
-target-version = ['py39']
+description = "Whisper implementation in JAX using NNX"
+requires-python = ">=3.10"
 
 [tool.ruff]
-line-length = 119
-select = ["E", "F", "W", "I"]
-ignore = ["E501"]
+line-length = 100
+target-version = "py310"
 
-[tool.ruff.per-file-ignores]
-"__init__.py" = ["F401"]
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "UP",     # pyupgrade
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

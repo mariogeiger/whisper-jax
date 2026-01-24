@@ -5,17 +5,11 @@ This module provides functions to download pretrained weights from HuggingFace H
 and load them into Flax NNX models.
 """
 
-import jax.numpy as jnp
-from huggingface_hub import hf_hub_download
-from transformers import WhisperConfig
-import numpy as np
-from pathlib import Path
-from typing import Dict, Any
-import flax
 from flax import nnx
+from transformers import WhisperConfig
 
 
-def download_whisper_weights(model_name: str = "openai/whisper-tiny") -> tuple[Dict, WhisperConfig]:
+def download_whisper_weights(model_name: str = "openai/whisper-tiny") -> tuple[dict, WhisperConfig]:
     """
     Download pretrained Whisper weights from HuggingFace Hub.
 
@@ -25,7 +19,7 @@ def download_whisper_weights(model_name: str = "openai/whisper-tiny") -> tuple[D
     Returns:
         Tuple of (weights_dict, config)
     """
-    from transformers import FlaxWhisperForConditionalGeneration, WhisperConfig
+    from transformers import FlaxWhisperForConditionalGeneration
 
     print(f"Downloading weights for {model_name}...")
 
@@ -33,13 +27,13 @@ def download_whisper_weights(model_name: str = "openai/whisper-tiny") -> tuple[D
     try:
         model = FlaxWhisperForConditionalGeneration.from_pretrained(
             model_name,
-            from_pt=False  # Try Flax weights first
+            from_pt=False,  # Try Flax weights first
         )
-    except:
+    except Exception:
         print("Flax weights not found, converting from PyTorch...")
         model = FlaxWhisperForConditionalGeneration.from_pretrained(
             model_name,
-            from_pt=True  # Convert from PyTorch if Flax not available
+            from_pt=True,  # Convert from PyTorch if Flax not available
         )
 
     config = model.config
@@ -47,12 +41,14 @@ def download_whisper_weights(model_name: str = "openai/whisper-tiny") -> tuple[D
     # Extract parameters
     params = model.params
 
-    print(f"Model config: {config.d_model}d, {config.encoder_layers} encoder layers, {config.decoder_layers} decoder layers")
+    print(
+        f"Model config: {config.d_model}d, {config.encoder_layers} encoder layers, {config.decoder_layers} decoder layers"
+    )
 
     return params, config
 
 
-def map_huggingface_to_nnx(hf_params: Dict, config: WhisperConfig) -> Dict:
+def map_huggingface_to_nnx(hf_params: dict, config: WhisperConfig) -> dict:
     """
     Map HuggingFace Flax parameters to NNX parameter structure.
 
@@ -63,22 +59,20 @@ def map_huggingface_to_nnx(hf_params: Dict, config: WhisperConfig) -> Dict:
     Returns:
         Dictionary mapping NNX parameter paths to values
     """
-    nnx_params = {}
-
     # Flatten HuggingFace parameters
-    from flax.traverse_util import flatten_dict, unflatten_dict
+    from flax.traverse_util import flatten_dict
 
-    flat_hf = flatten_dict(hf_params, sep='/')
+    flat_hf = flatten_dict(hf_params, sep="/")
 
     print(f"\nTotal HuggingFace parameters: {len(flat_hf)}")
     print("Sample parameter keys:")
-    for i, key in enumerate(list(flat_hf.keys())[:10]):
+    for key in list(flat_hf.keys())[:10]:
         print(f"  {key}: {flat_hf[key].shape}")
 
     return flat_hf
 
 
-def load_weights_into_nnx_model(model: nnx.Module, hf_params: Dict, config: WhisperConfig):
+def load_weights_into_nnx_model(model: nnx.Module, hf_params: dict, config: WhisperConfig):
     """
     Load HuggingFace weights into NNX model.
 
@@ -94,27 +88,24 @@ def load_weights_into_nnx_model(model: nnx.Module, hf_params: Dict, config: Whis
 
     # Get NNX parameters
     nnx_state = nnx.state(model)
-    flat_nnx = flatten_dict(nnx_state, sep='/')
+    flat_nnx = flatten_dict(nnx_state, sep="/")
 
     print(f"\nNNX model parameters: {len(flat_nnx)}")
     print("Sample NNX parameter keys:")
-    for i, key in enumerate(list(flat_nnx.keys())[:10]):
-        if hasattr(flat_nnx[key], 'value'):
+    for key in list(flat_nnx.keys())[:10]:
+        if hasattr(flat_nnx[key], "value"):
             print(f"  {key}: {flat_nnx[key].value.shape}")
 
-    # Flatten HuggingFace parameters
-    flat_hf = flatten_dict(hf_params, sep='/')
-
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print("PARAMETER MAPPING GUIDE")
-    print(f"{'='*80}")
+    print(f"{'=' * 80}")
     print("\nHuggingFace uses the following structure:")
     print("  model/encoder/...")
     print("  model/decoder/...")
     print("\nNNX model uses:")
     print("  encoder/...")
     print("  decoder/...")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
     # This is a conceptual demonstration
     # A full implementation would need detailed parameter name mapping
@@ -133,24 +124,24 @@ def get_whisper_config(model_name: str) -> WhisperConfig:
 
 def print_model_info(config: WhisperConfig):
     """Print model architecture information."""
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print(f"MODEL CONFIGURATION: {config._name_or_path}")
-    print(f"{'='*80}")
-    print(f"Encoder:")
+    print(f"{'=' * 80}")
+    print("Encoder:")
     print(f"  - Layers: {config.encoder_layers}")
     print(f"  - Attention heads: {config.encoder_attention_heads}")
     print(f"  - FFN dimension: {config.encoder_ffn_dim}")
-    print(f"\nDecoder:")
+    print("\nDecoder:")
     print(f"  - Layers: {config.decoder_layers}")
     print(f"  - Attention heads: {config.decoder_attention_heads}")
     print(f"  - FFN dimension: {config.decoder_ffn_dim}")
-    print(f"\nModel:")
+    print("\nModel:")
     print(f"  - Embedding dimension: {config.d_model}")
     print(f"  - Vocabulary size: {config.vocab_size}")
     print(f"  - Mel bins: {config.num_mel_bins}")
     print(f"  - Max source positions: {config.max_source_positions}")
     print(f"  - Max target positions: {config.max_target_positions}")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
 
 if __name__ == "__main__":

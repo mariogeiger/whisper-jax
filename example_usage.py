@@ -10,20 +10,13 @@ This demonstrates:
 import jax
 import jax.numpy as jnp
 from flax import nnx
-import numpy as np
 
-from whisper_nnx import (
-    WhisperModel,
-    create_whisper_tiny,
-    create_whisper_base,
-    create_whisper_small
-)
 from weight_loader import (
     download_whisper_weights,
     get_whisper_config,
     print_model_info,
-    load_weights_into_nnx_model
 )
+from whisper_nnx import create_whisper_base, create_whisper_small, create_whisper_tiny
 
 
 def example_1_create_model():
@@ -117,7 +110,7 @@ def example_3_model_comparison():
         # Count parameters
         params_graph = nnx.state(model, nnx.Param)
         total_params = sum(
-            x.value.size if hasattr(x, 'value') else (x.size if hasattr(x, 'size') else 0)
+            x.value.size if hasattr(x, "value") else (x.size if hasattr(x, "size") else 0)
             for x in jax.tree.leaves(params_graph)
         )
 
@@ -212,12 +205,14 @@ def example_5_batch_processing():
     print(f"  Encoder output shape: {encoder_outputs.shape}")
 
     # Decode each with different start tokens
-    decoder_input_ids = jnp.array([
-        [50258, 50259, 50359],  # English transcription
-        [50258, 50259, 50359],  # English transcription
-        [50258, 50259, 50359],  # English transcription
-        [50258, 50259, 50359],  # English transcription
-    ])
+    decoder_input_ids = jnp.array(
+        [
+            [50258, 50259, 50359],  # English transcription
+            [50258, 50259, 50359],  # English transcription
+            [50258, 50259, 50359],  # English transcription
+            [50258, 50259, 50359],  # English transcription
+        ]
+    )
 
     logits = model.decode(decoder_input_ids, encoder_outputs, deterministic=True)
     print(f"  Logits shape: {logits.shape}")
@@ -241,12 +236,13 @@ def main():
         ("Batch processing", example_5_batch_processing),
     ]
 
-    for i, (name, example_fn) in enumerate(examples, 1):
+    for i, (_name, example_fn) in enumerate(examples, 1):
         try:
             example_fn()
         except Exception as e:
             print(f"\n✗ Example {i} failed: {e}\n")
             import traceback
+
             traceback.print_exc()
 
     print("=" * 80)

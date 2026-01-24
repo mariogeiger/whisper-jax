@@ -9,8 +9,6 @@ can load pretrained weights from HuggingFace.
 import jax
 import jax.numpy as jnp
 from flax import nnx
-from typing import Optional, Tuple
-import numpy as np
 
 
 class MultiHeadAttention(nnx.Module):
@@ -22,7 +20,7 @@ class MultiHeadAttention(nnx.Module):
         num_heads: int,
         dropout: float = 0.0,
         is_causal: bool = False,
-        rngs: nnx.Rngs = None
+        rngs: nnx.Rngs = None,
     ):
         self.embed_dim = embed_dim
         self.num_heads = num_heads
@@ -42,9 +40,9 @@ class MultiHeadAttention(nnx.Module):
     def __call__(
         self,
         hidden_states: jnp.ndarray,
-        key_value_states: Optional[jnp.ndarray] = None,
-        attention_mask: Optional[jnp.ndarray] = None,
-        deterministic: bool = True
+        key_value_states: jnp.ndarray | None = None,
+        attention_mask: jnp.ndarray | None = None,
+        deterministic: bool = True,
     ) -> jnp.ndarray:
         """
         Args:
@@ -71,13 +69,15 @@ class MultiHeadAttention(nnx.Module):
             value = self.v_proj(key_value_states)
 
         # Reshape to (batch, num_heads, seq_len, head_dim)
-        query = query.reshape(batch_size, seq_len, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
+        query = query.reshape(batch_size, seq_len, self.num_heads, self.head_dim).transpose(
+            0, 2, 1, 3
+        )
         key = key.reshape(batch_size, -1, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
         value = value.reshape(batch_size, -1, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
 
         # Scaled dot-product attention
         scale = jnp.sqrt(self.head_dim).astype(query.dtype)
-        attn_weights = jnp.einsum('bhqd,bhkd->bhqk', query, key) / scale
+        attn_weights = jnp.einsum("bhqd,bhkd->bhqk", query, key) / scale
 
         # Apply causal mask if needed
         if self.is_causal:
@@ -92,7 +92,7 @@ class MultiHeadAttention(nnx.Module):
         attn_weights = self.dropout(attn_weights, deterministic=deterministic)
 
         # Apply attention to values
-        attn_output = jnp.einsum('bhqk,bhkd->bhqd', attn_weights, value)
+        attn_output = jnp.einsum("bhqk,bhkd->bhqd", attn_weights, value)
         attn_output = attn_output.transpose(0, 2, 1, 3).reshape(batch_size, seq_len, self.embed_dim)
 
         return self.out_proj(attn_output)
@@ -101,13 +101,7 @@ class MultiHeadAttention(nnx.Module):
 class FeedForward(nnx.Module):
     """Feed-forward network."""
 
-    def __init__(
-        self,
-        embed_dim: int,
-        ffn_dim: int,
-        dropout: float = 0.0,
-        rngs: nnx.Rngs = None
-    ):
+    def __init__(self, embed_dim: int, ffn_dim: int, dropout: float = 0.0, rngs: nnx.Rngs = None):
         self.fc1 = nnx.Linear(embed_dim, ffn_dim, rngs=rngs)
         self.fc2 = nnx.Linear(ffn_dim, embed_dim, rngs=rngs)
         self.dropout = nnx.Dropout(dropout, rngs=rngs)
@@ -130,9 +124,11 @@ class EncoderLayer(nnx.Module):
         num_heads: int,
         ffn_dim: int,
         dropout: float = 0.0,
-        rngs: nnx.Rngs = None
+        rngs: nnx.Rngs = None,
     ):
-        self.self_attn = MultiHeadAttention(embed_dim, num_heads, dropout, is_causal=False, rngs=rngs)
+        self.self_attn = MultiHeadAttention(
+            embed_dim, num_heads, dropout, is_causal=False, rngs=rngs
+        )
         self.self_attn_layer_norm = nnx.LayerNorm(embed_dim, epsilon=1e-5, rngs=rngs)
 
         self.ffn = FeedForward(embed_dim, ffn_dim, dropout, rngs=rngs)
@@ -166,12 +162,16 @@ class DecoderLayer(nnx.Module):
         num_heads: int,
         ffn_dim: int,
         dropout: float = 0.0,
-        rngs: nnx.Rngs = None
+        rngs: nnx.Rngs = None,
     ):
-        self.self_attn = MultiHeadAttention(embed_dim, num_heads, dropout, is_causal=True, rngs=rngs)
+        self.self_attn = MultiHeadAttention(
+            embed_dim, num_heads, dropout, is_causal=True, rngs=rngs
+        )
         self.self_attn_layer_norm = nnx.LayerNorm(embed_dim, epsilon=1e-5, rngs=rngs)
 
-        self.encoder_attn = MultiHeadAttention(embed_dim, num_heads, dropout, is_causal=False, rngs=rngs)
+        self.encoder_attn = MultiHeadAttention(
+            embed_dim, num_heads, dropout, is_causal=False, rngs=rngs
+        )
         self.encoder_attn_layer_norm = nnx.LayerNorm(embed_dim, epsilon=1e-5, rngs=rngs)
 
         self.ffn = FeedForward(embed_dim, ffn_dim, dropout, rngs=rngs)
@@ -182,8 +182,8 @@ class DecoderLayer(nnx.Module):
     def __call__(
         self,
         hidden_states: jnp.ndarray,
-        encoder_hidden_states: Optional[jnp.ndarray] = None,
-        deterministic: bool = True
+        encoder_hidden_states: jnp.ndarray | None = None,
+        deterministic: bool = True,
     ) -> jnp.ndarray:
         # Self-attention (causal)
         residual = hidden_states
@@ -197,9 +197,7 @@ class DecoderLayer(nnx.Module):
             residual = hidden_states
             hidden_states = self.encoder_attn_layer_norm(hidden_states)
             hidden_states = self.encoder_attn(
-                hidden_states,
-                key_value_states=encoder_hidden_states,
-                deterministic=deterministic
+                hidden_states, key_value_states=encoder_hidden_states, deterministic=deterministic
             )
             hidden_states = self.dropout(hidden_states, deterministic=deterministic)
             hidden_states = residual + hidden_states
@@ -225,7 +223,7 @@ class WhisperEncoder(nnx.Module):
         num_heads: int = 8,
         ffn_dim: int = 2048,
         dropout: float = 0.0,
-        rngs: nnx.Rngs = None
+        rngs: nnx.Rngs = None,
     ):
         # Convolution layers to process mel-spectrogram
         self.conv1 = nnx.Conv(
@@ -233,7 +231,7 @@ class WhisperEncoder(nnx.Module):
             out_features=embed_dim,
             kernel_size=(3,),
             padding="SAME",
-            rngs=rngs
+            rngs=rngs,
         )
         self.conv2 = nnx.Conv(
             in_features=embed_dim,
@@ -241,21 +239,21 @@ class WhisperEncoder(nnx.Module):
             kernel_size=(3,),
             strides=(2,),
             padding="SAME",
-            rngs=rngs
+            rngs=rngs,
         )
 
         # Positional embedding
         self.embed_positions = nnx.Embed(
-            num_embeddings=max_source_positions,
-            features=embed_dim,
-            rngs=rngs
+            num_embeddings=max_source_positions, features=embed_dim, rngs=rngs
         )
 
         # Transformer encoder layers
-        self.layers = nnx.Sequential(*[
-            EncoderLayer(embed_dim, num_heads, ffn_dim, dropout, rngs=rngs)
-            for _ in range(num_layers)
-        ])
+        self.layers = nnx.Sequential(
+            *[
+                EncoderLayer(embed_dim, num_heads, ffn_dim, dropout, rngs=rngs)
+                for _ in range(num_layers)
+            ]
+        )
 
         self.layer_norm = nnx.LayerNorm(embed_dim, epsilon=1e-5, rngs=rngs)
         self.dropout = nnx.Dropout(dropout, rngs=rngs)
@@ -303,25 +301,21 @@ class WhisperDecoder(nnx.Module):
         num_heads: int = 8,
         ffn_dim: int = 2048,
         dropout: float = 0.0,
-        rngs: nnx.Rngs = None
+        rngs: nnx.Rngs = None,
     ):
         # Token and position embeddings
-        self.embed_tokens = nnx.Embed(
-            num_embeddings=vocab_size,
-            features=embed_dim,
-            rngs=rngs
-        )
+        self.embed_tokens = nnx.Embed(num_embeddings=vocab_size, features=embed_dim, rngs=rngs)
         self.embed_positions = nnx.Embed(
-            num_embeddings=max_target_positions,
-            features=embed_dim,
-            rngs=rngs
+            num_embeddings=max_target_positions, features=embed_dim, rngs=rngs
         )
 
         # Transformer decoder layers
-        self.layers = nnx.Sequential(*[
-            DecoderLayer(embed_dim, num_heads, ffn_dim, dropout, rngs=rngs)
-            for _ in range(num_layers)
-        ])
+        self.layers = nnx.Sequential(
+            *[
+                DecoderLayer(embed_dim, num_heads, ffn_dim, dropout, rngs=rngs)
+                for _ in range(num_layers)
+            ]
+        )
 
         self.layer_norm = nnx.LayerNorm(embed_dim, epsilon=1e-5, rngs=rngs)
         self.dropout = nnx.Dropout(dropout, rngs=rngs)
@@ -329,8 +323,8 @@ class WhisperDecoder(nnx.Module):
     def __call__(
         self,
         input_ids: jnp.ndarray,
-        encoder_hidden_states: Optional[jnp.ndarray] = None,
-        deterministic: bool = True
+        encoder_hidden_states: jnp.ndarray | None = None,
+        deterministic: bool = True,
     ) -> jnp.ndarray:
         """
         Args:
@@ -353,7 +347,9 @@ class WhisperDecoder(nnx.Module):
 
         # Apply transformer layers
         for i in range(len(self.layers.layers)):
-            x = self.layers.layers[i](x, encoder_hidden_states=encoder_hidden_states, deterministic=deterministic)
+            x = self.layers.layers[i](
+                x, encoder_hidden_states=encoder_hidden_states, deterministic=deterministic
+            )
 
         x = self.layer_norm(x)
 
@@ -378,7 +374,7 @@ class WhisperModel(nnx.Module):
         encoder_ffn_dim: int = 2048,
         decoder_ffn_dim: int = 2048,
         dropout: float = 0.0,
-        rngs: nnx.Rngs = None
+        rngs: nnx.Rngs = None,
     ):
         self.encoder = WhisperEncoder(
             num_mel_bins=num_mel_bins,
@@ -388,7 +384,7 @@ class WhisperModel(nnx.Module):
             num_heads=encoder_attention_heads,
             ffn_dim=encoder_ffn_dim,
             dropout=dropout,
-            rngs=rngs
+            rngs=rngs,
         )
 
         self.decoder = WhisperDecoder(
@@ -399,7 +395,7 @@ class WhisperModel(nnx.Module):
             num_heads=decoder_attention_heads,
             ffn_dim=decoder_ffn_dim,
             dropout=dropout,
-            rngs=rngs
+            rngs=rngs,
         )
 
         # Output projection (language modeling head)
@@ -410,16 +406,11 @@ class WhisperModel(nnx.Module):
         return self.encoder(input_features, deterministic=deterministic)
 
     def decode(
-        self,
-        input_ids: jnp.ndarray,
-        encoder_hidden_states: jnp.ndarray,
-        deterministic: bool = True
+        self, input_ids: jnp.ndarray, encoder_hidden_states: jnp.ndarray, deterministic: bool = True
     ) -> jnp.ndarray:
         """Decode with encoder outputs."""
         decoder_output = self.decoder(
-            input_ids,
-            encoder_hidden_states=encoder_hidden_states,
-            deterministic=deterministic
+            input_ids, encoder_hidden_states=encoder_hidden_states, deterministic=deterministic
         )
         logits = self.lm_head(decoder_output)
         return logits
@@ -428,7 +419,7 @@ class WhisperModel(nnx.Module):
         self,
         input_features: jnp.ndarray,
         decoder_input_ids: jnp.ndarray,
-        deterministic: bool = True
+        deterministic: bool = True,
     ) -> jnp.ndarray:
         """Full forward pass."""
         encoder_output = self.encode(input_features, deterministic=deterministic)
@@ -454,7 +445,7 @@ def create_whisper_tiny(rngs: nnx.Rngs = None) -> WhisperModel:
         encoder_ffn_dim=1536,
         decoder_ffn_dim=1536,
         dropout=0.0,
-        rngs=rngs
+        rngs=rngs,
     )
 
 
@@ -476,7 +467,7 @@ def create_whisper_base(rngs: nnx.Rngs = None) -> WhisperModel:
         encoder_ffn_dim=2048,
         decoder_ffn_dim=2048,
         dropout=0.0,
-        rngs=rngs
+        rngs=rngs,
     )
 
 
@@ -498,7 +489,7 @@ def create_whisper_small(rngs: nnx.Rngs = None) -> WhisperModel:
         encoder_ffn_dim=3072,
         decoder_ffn_dim=3072,
         dropout=0.0,
-        rngs=rngs
+        rngs=rngs,
     )
 
 
