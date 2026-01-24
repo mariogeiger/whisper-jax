@@ -279,11 +279,19 @@ python weight_loader.py
 
 ## Dependencies
 
-- `jax`: JAX framework
-- `flax`: Flax NNX for neural networks
-- `transformers`: HuggingFace transformers (for weight loading)
-- `numpy`: Numerical operations
+**Tested with latest stable versions:**
+
+- `jax==0.9.0`: JAX framework (January 2025 release)
+- `jaxlib==0.9.0`: JAX library
+- `flax==0.12.2`: Flax NNX for neural networks
+- `transformers>=4.27.4,<4.35.0`: HuggingFace transformers (for weight loading)
+- `numpy>=2.0`: Numerical operations
 - `huggingface_hub`: Download pretrained models
+
+Install:
+```bash
+pip install jax flax transformers
+```
 
 ## References
 

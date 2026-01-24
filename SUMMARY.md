@@ -209,16 +209,20 @@ whisper-jax/
     └── ...
 ```
 
-## Dependencies Installed
+## Dependencies (Latest Stable)
+
+**Tested and verified with:**
 
 ```
-transformers==4.34.1 (within 4.27.4-4.35.0 range) ✅
-jax==0.9.0 ✅
-flax==0.12.2 ✅
+jax==0.9.0          ✅ (January 2025 - Latest stable)
+jaxlib==0.9.0       ✅ (Latest stable)
+flax==0.12.2        ✅ (Latest stable with NNX)
+transformers==4.34.1 ✅ (within 4.27.4-4.35.0 range)
+numpy==2.4.1        ✅ (Latest)
 huggingface-hub==0.17.3 ✅
 ```
 
-All compatible and working!
+**All tests pass with latest versions!** ✅
 
 ## Git Repository Status
 

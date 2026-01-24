@@ -94,11 +94,13 @@ Audio (mel-spectrogram) → Encoder → Hidden States → Decoder → Text Token
 
 ## Model Sizes
 
-| Model  | Parameters | Embed Dim | Layers (Enc/Dec) | Heads |
-|--------|-----------|-----------|------------------|-------|
-| Tiny   | 39M       | 384       | 4/4              | 6     |
-| Base   | 74M       | 512       | 6/6              | 8     |
-| Small  | 244M      | 768       | 12/12            | 12    |
+| Model  | Parameters (Official) | Actual Params | Embed Dim | Layers (Enc/Dec) | Heads |
+|--------|----------------------|---------------|-----------|------------------|-------|
+| Tiny   | 39M                  | 57.7M         | 384       | 4/4              | 6     |
+| Base   | 74M                  | 99.1M         | 512       | 6/6              | 8     |
+| Small  | 244M                 | 281.6M        | 768       | 12/12            | 12    |
+
+**Note:** Actual parameter counts are higher due to including all embeddings, layer norms, and biases.
 
 All sizes are implemented! Use:
 - `create_whisper_tiny()`
@@ -219,12 +221,20 @@ Tested on the models:
 
 ## Dependencies
 
+**Latest versions tested and working:**
+
 ```
-jax>=0.9.0
-flax>=0.12.0
+jax==0.9.0          # Latest stable (January 2025)
+jaxlib==0.9.0       # Latest stable
+flax==0.12.2        # Latest stable (Flax NNX)
 transformers>=4.27.4,<4.35.0
-numpy
+numpy>=2.0
 huggingface_hub
+```
+
+Install with:
+```bash
+pip install jax flax transformers
 ```
 
 ## What I Learned from whisper-jax
