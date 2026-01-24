@@ -67,9 +67,9 @@ def main():
     parser.add_argument("audio_file", help="Path to audio file")
     parser.add_argument(
         "--model",
-        default="tiny",
+        default="small",
         choices=Whisper.available_models(),
-        help="Model size (default: tiny)",
+        help="Model size (default: small)",
     )
     parser.add_argument(
         "--lang",

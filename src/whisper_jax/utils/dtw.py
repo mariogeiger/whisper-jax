@@ -169,6 +169,19 @@ def find_word_alignments(
     ]
 
 
+# Fixed token buffer size to avoid JIT recompilation on varying lengths
+# Prompt (4) + max_tokens (200) + EOT (1) = 205
+ALIGNMENT_TOKEN_BUFFER = 205
+
+
+def warmup_dtw() -> None:
+    """Warmup Numba JIT compilation for DTW.
+
+    Call this once to front-load the ~0.5s Numba compilation time.
+    """
+    dtw(np.zeros((10, 100), dtype=np.float32))
+
+
 def get_word_timestamps(
     model,
     tokenizer,
@@ -211,19 +224,24 @@ def get_word_timestamps(
     lang_token = LANG_TOKENS.get(language, LANG_TOKENS["en"])
     prompt = [SOT, lang_token, TRANSCRIBE, NO_TIMESTAMPS]
     full_tokens = prompt + text_tokens + [EOT]
+    actual_len = len(full_tokens)
+
+    # Pad to fixed size to avoid JIT recompilation
+    if actual_len < ALIGNMENT_TOKEN_BUFFER:
+        full_tokens = full_tokens + [0] * (ALIGNMENT_TOKEN_BUFFER - actual_len)
     tokens_jax = jnp.array([full_tokens])
 
     # Run JIT-compiled forward pass
     probs, attn_matrix, num_frames = _alignment_fn(audio, tokens_jax, alignment_mask)
 
-    # Extract text token probabilities
+    # Extract text token probabilities (only for actual tokens, not padding)
     prompt_len = len(prompt)
     token_probs = np.array(
         [float(probs[prompt_len - 1 + i, tok]) for i, tok in enumerate(text_tokens)]
     )
 
-    # Convert attention to numpy
-    attn_np = np.array(attn_matrix)
+    # Convert attention to numpy, slice to actual length
+    attn_np = np.array(attn_matrix[:actual_len])
 
     # Find alignments
     return find_word_alignments(
