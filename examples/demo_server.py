@@ -49,13 +49,21 @@ class WhisperTranscriber:
     def is_ready(self) -> bool:
         return self.whisper is not None and self.whisper._warmed_up
 
-    def transcribe(self, audio: np.ndarray, lang: str = "en") -> str:
-        """Transcribe audio to text."""
+    def transcribe(
+        self, audio: np.ndarray, lang: str = "en", word_timestamps: bool = False
+    ) -> dict:
+        """Transcribe audio to text with optional word timestamps."""
         if self.whisper is None or len(audio) < SAMPLE_RATE * 0.5:
-            return ""
+            return {"text": "", "words": []}
 
-        result = self.whisper.transcribe(audio, language=lang)
-        return result.text
+        result = self.whisper.transcribe(audio, language=lang, word_timestamps=word_timestamps)
+        response = {"text": result.text}
+        if word_timestamps and result.words:
+            response["words"] = [
+                {"word": w.word.strip(), "start": round(w.start, 2), "end": round(w.end, 2)}
+                for w in result.words
+            ]
+        return response
 
 
 # Global transcriber instance
@@ -74,19 +82,25 @@ async def index():
     return FileResponse(static_dir / "index.html")
 
 
+async def do_warmup(websocket: WebSocket) -> None:
+    """Warmup the model and notify client."""
+    if not transcriber.is_ready:
+        await websocket.send_json({"type": "status", "message": "Warming up JIT..."})
+        transcriber.warmup()
+    await websocket.send_json({"type": "status", "message": "Ready"})
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     buffer = np.array([], dtype=np.float32)
     lang = "en"
+    timestamps_enabled = False
+    initialized = False
 
     try:
-        # Warmup JIT on first connection if needed
-        if not transcriber.is_ready:
-            await websocket.send_json({"type": "status", "message": "Warming up JIT..."})
-            transcriber.warmup()
-
-        await websocket.send_json({"type": "status", "message": "Ready"})
+        # Tell client to send preferences, we'll warmup after
+        await websocket.send_json({"type": "status", "message": "Waiting for preferences..."})
 
         while True:
             data = await websocket.receive()
@@ -103,10 +117,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 if len(buffer) >= MAX_AUDIO_SAMPLES:
                     await websocket.send_json({"type": "processing"})
                     t0 = time.perf_counter()
-                    text = transcriber.transcribe(buffer, lang)
-                    print(f"[{CHUNK_DURATION}s] {time.perf_counter() - t0:.2f}s [{lang}]: {text}")
+                    result = transcriber.transcribe(buffer, lang, timestamps_enabled)
+                    print(
+                        f"[{CHUNK_DURATION}s] {time.perf_counter() - t0:.2f}s [{lang}]: "
+                        f"{result['text']}"
+                    )
                     buffer = np.array([], dtype=np.float32)
-                    await websocket.send_json({"type": "transcription", "text": text or ""})
+                    await websocket.send_json({"type": "transcription", **result})
 
             elif "text" in data:
                 msg = data["text"]
@@ -115,9 +132,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     if parsed.get("type") == "lang":
                         lang = parsed.get("value", "en")
                         print(f"Language set to: {lang}")
-                        await websocket.send_json(
-                            {"type": "status", "message": f"Language: {lang}"}
-                        )
+                        if initialized:
+                            await websocket.send_json(
+                                {"type": "status", "message": f"Language: {lang}"}
+                            )
                     elif parsed.get("type") == "model":
                         new_model = parsed.get("value", "tiny")
                         if new_model != transcriber.model_name:
@@ -125,16 +143,19 @@ async def websocket_endpoint(websocket: WebSocket):
                                 {"type": "status", "message": f"Loading {new_model}..."}
                             )
                             transcriber.load(new_model)
-                            await websocket.send_json(
-                                {"type": "status", "message": "Warming up JIT..."}
-                            )
-                            transcriber.warmup()
-                        await websocket.send_json({"type": "status", "message": "Ready"})
+                            if initialized:
+                                await do_warmup(websocket)
+                    elif parsed.get("type") == "timestamps":
+                        timestamps_enabled = parsed.get("value", False)
+                        print(f"Timestamps: {'on' if timestamps_enabled else 'off'}")
+                elif msg == "init":
+                    initialized = True
+                    await do_warmup(websocket)
                 elif msg == "flush":
                     if len(buffer) >= SAMPLE_RATE * 0.5:
                         await websocket.send_json({"type": "processing"})
-                        text = transcriber.transcribe(buffer, lang)
-                        await websocket.send_json({"type": "transcription", "text": text or ""})
+                        result = transcriber.transcribe(buffer, lang, timestamps_enabled)
+                        await websocket.send_json({"type": "transcription", **result})
                     buffer = np.array([], dtype=np.float32)
                     await websocket.send_json({"type": "status", "message": "Ready"})
                 elif msg == "clear":
