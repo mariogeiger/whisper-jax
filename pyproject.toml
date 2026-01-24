@@ -1,26 +1,144 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
-name = "whisper-jax"
+name = "whisper-nnx"
 version = "0.1.0"
-description = "Whisper implementation in JAX using NNX"
+description = "Pure JAX implementation of OpenAI's Whisper using Flax NNX"
+readme = "README.md"
+license = "MIT"
 requires-python = ">=3.10"
+authors = [
+    { name = "Mario Geiger" },
+]
+keywords = [
+    "jax",
+    "flax",
+    "whisper",
+    "speech-recognition",
+    "asr",
+    "deep-learning",
+    "machine-learning",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = [
+    "jax>=0.4.20",
+    "jaxlib>=0.4.20",
+    "flax>=0.8.0",
+]
+
+[project.optional-dependencies]
+weights = [
+    "transformers>=4.36.0",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+]
+all = [
+    "transformers>=4.36.0",
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/mario/whisper-nnx"
+Repository = "https://github.com/mario/whisper-nnx"
+Issues = "https://github.com/mario/whisper-nnx/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/whisper_nnx"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/examples",
+    "/README.md",
+]
+
+[tool.hatch.envs.default]
+features = ["dev", "weights"]
+
+[tool.hatch.envs.default.scripts]
+test = "pytest {args:tests}"
+lint = "ruff check {args:.}"
+format = "ruff format {args:.}"
+typecheck = "mypy src/whisper_nnx"
+
+[tool.hatch.envs.cuda]
+features = ["dev", "weights"]
 
 [tool.ruff]
-line-length = 100
 target-version = "py310"
+line-length = 100
+src = ["src"]
 
 [tool.ruff.lint]
 select = [
     "E",      # pycodestyle errors
     "W",      # pycodestyle warnings
-    "F",      # Pyflakes
+    "F",      # pyflakes
     "I",      # isort
     "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
     "UP",     # pyupgrade
+    "RUF",    # ruff-specific
 ]
 ignore = [
     "E501",   # line too long (handled by formatter)
 ]
 
+[tool.ruff.lint.isort]
+known-first-party = ["whisper_nnx"]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "jax.*",
+    "flax.*",
+    "transformers.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["src/whisper_nnx"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

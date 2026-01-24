@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Example usage of the pure JAX Whisper implementation.
 
@@ -11,12 +12,14 @@ import jax
 import jax.numpy as jnp
 from flax import nnx
 
-from weight_loader import (
+from whisper_nnx import (
+    create_whisper_base,
+    create_whisper_small,
+    create_whisper_tiny,
     download_whisper_weights,
     get_whisper_config,
     print_model_info,
 )
-from whisper_nnx import create_whisper_base, create_whisper_small, create_whisper_tiny
 
 
 def example_1_create_model():

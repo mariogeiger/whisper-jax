@@ -5,11 +5,17 @@ This module provides functions to download pretrained weights from HuggingFace H
 and load them into Flax NNX models.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from flax import nnx
-from transformers import WhisperConfig
+
+if TYPE_CHECKING:
+    from transformers import WhisperConfig
 
 
-def download_whisper_weights(model_name: str = "openai/whisper-tiny") -> tuple[dict, WhisperConfig]:
+def download_whisper_weights(model_name: str = "openai/whisper-tiny") -> tuple[dict, "WhisperConfig"]:
     """
     Download pretrained Whisper weights from HuggingFace Hub.
 
@@ -48,7 +54,7 @@ def download_whisper_weights(model_name: str = "openai/whisper-tiny") -> tuple[d
     return params, config
 
 
-def map_huggingface_to_nnx(hf_params: dict, config: WhisperConfig) -> dict:
+def map_huggingface_to_nnx(hf_params: dict, config: "WhisperConfig") -> dict:
     """
     Map HuggingFace Flax parameters to NNX parameter structure.
 
@@ -72,7 +78,9 @@ def map_huggingface_to_nnx(hf_params: dict, config: WhisperConfig) -> dict:
     return flat_hf
 
 
-def load_weights_into_nnx_model(model: nnx.Module, hf_params: dict, config: WhisperConfig):
+def load_weights_into_nnx_model(
+    model: nnx.Module, hf_params: dict, config: "WhisperConfig"
+) -> None:
     """
     Load HuggingFace weights into NNX model.
 
@@ -114,15 +122,15 @@ def load_weights_into_nnx_model(model: nnx.Module, hf_params: dict, config: Whis
     print("implement detailed parameter name translation.")
 
 
-def get_whisper_config(model_name: str) -> WhisperConfig:
+def get_whisper_config(model_name: str) -> "WhisperConfig":
     """Get Whisper configuration for a model."""
-    from transformers import WhisperConfig
+    from transformers import WhisperConfig as HFWhisperConfig
 
-    config = WhisperConfig.from_pretrained(model_name)
+    config = HFWhisperConfig.from_pretrained(model_name)
     return config
 
 
-def print_model_info(config: WhisperConfig):
+def print_model_info(config: "WhisperConfig") -> None:
     """Print model architecture information."""
     print(f"\n{'=' * 80}")
     print(f"MODEL CONFIGURATION: {config._name_or_path}")
@@ -142,26 +150,3 @@ def print_model_info(config: WhisperConfig):
     print(f"  - Max source positions: {config.max_source_positions}")
     print(f"  - Max target positions: {config.max_target_positions}")
     print(f"{'=' * 80}\n")
-
-
-if __name__ == "__main__":
-    # Example: Download and inspect weights
-    model_name = "openai/whisper-tiny"
-
-    print(f"Loading {model_name}...\n")
-
-    # Get configuration
-    config = get_whisper_config(model_name)
-    print_model_info(config)
-
-    # Download weights
-    params, config = download_whisper_weights(model_name)
-
-    # Map to NNX format
-    nnx_params = map_huggingface_to_nnx(params, config)
-
-    print("\nWeight download and mapping demonstration complete!")
-    print("\nNext steps:")
-    print("1. Implement detailed parameter name mapping")
-    print("2. Load parameters into NNX model")
-    print("3. Verify model outputs match HuggingFace implementation")

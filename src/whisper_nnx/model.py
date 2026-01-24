@@ -334,7 +334,7 @@ class WhisperDecoder(nnx.Module):
         Returns:
             decoder_output: (batch, seq_len, embed_dim)
         """
-        batch_size, seq_len = input_ids.shape
+        _, seq_len = input_ids.shape
 
         # Get embeddings
         x = self.embed_tokens(input_ids)
@@ -427,7 +427,7 @@ class WhisperModel(nnx.Module):
         return logits
 
 
-def create_whisper_tiny(rngs: nnx.Rngs = None) -> WhisperModel:
+def create_whisper_tiny(rngs: nnx.Rngs | None = None) -> WhisperModel:
     """Create Whisper tiny model (39M parameters)."""
     if rngs is None:
         rngs = nnx.Rngs(0)
@@ -449,7 +449,7 @@ def create_whisper_tiny(rngs: nnx.Rngs = None) -> WhisperModel:
     )
 
 
-def create_whisper_base(rngs: nnx.Rngs = None) -> WhisperModel:
+def create_whisper_base(rngs: nnx.Rngs | None = None) -> WhisperModel:
     """Create Whisper base model (74M parameters)."""
     if rngs is None:
         rngs = nnx.Rngs(0)
@@ -471,7 +471,7 @@ def create_whisper_base(rngs: nnx.Rngs = None) -> WhisperModel:
     )
 
 
-def create_whisper_small(rngs: nnx.Rngs = None) -> WhisperModel:
+def create_whisper_small(rngs: nnx.Rngs | None = None) -> WhisperModel:
     """Create Whisper small model (244M parameters)."""
     if rngs is None:
         rngs = nnx.Rngs(0)
@@ -491,33 +491,3 @@ def create_whisper_small(rngs: nnx.Rngs = None) -> WhisperModel:
         dropout=0.0,
         rngs=rngs,
     )
-
-
-if __name__ == "__main__":
-    # Example usage
-    print("Creating Whisper Tiny model...")
-    model = create_whisper_tiny()
-
-    # Test with dummy data
-    batch_size = 2
-    num_mel_bins = 80
-    time_steps = 3000
-
-    # Create dummy input
-    input_features = jnp.ones((batch_size, num_mel_bins, time_steps))
-    decoder_input_ids = jnp.ones((batch_size, 10), dtype=jnp.int32)
-
-    print(f"Input features shape: {input_features.shape}")
-    print(f"Decoder input IDs shape: {decoder_input_ids.shape}")
-
-    # Forward pass
-    print("\nRunning forward pass...")
-    logits = model(input_features, decoder_input_ids, deterministic=True)
-    print(f"Output logits shape: {logits.shape}")
-
-    # Test encoder
-    print("\nTesting encoder...")
-    encoder_output = model.encode(input_features)
-    print(f"Encoder output shape: {encoder_output.shape}")
-
-    print("\nModel created successfully!")

@@ -5,47 +5,48 @@ A clean, from-scratch implementation of the Whisper speech recognition model
 built with JAX and the modern Flax NNX API.
 """
 
-__version__ = "0.1.0"
-
-from weight_loader import (
-    download_whisper_weights,
-    get_whisper_config,
-    print_model_info,
-)
-from whisper_nnx import (
+from whisper_nnx.model import (
     DecoderLayer,
     EncoderLayer,
     FeedForward,
-    # Components
     MultiHeadAttention,
     WhisperDecoder,
     WhisperEncoder,
-    # Core model
     WhisperModel,
     create_whisper_base,
     create_whisper_small,
-    # Model factories
     create_whisper_tiny,
 )
+from whisper_nnx.weight_loader import (
+    download_whisper_weights,
+    get_whisper_config,
+    load_weights_into_nnx_model,
+    map_huggingface_to_nnx,
+    print_model_info,
+)
+
+__version__ = "0.1.0"
 
 __all__ = [
     # Version
     "__version__",
-    # Models
-    "WhisperModel",
-    "WhisperEncoder",
-    "WhisperDecoder",
     # Components
-    "MultiHeadAttention",
-    "FeedForward",
-    "EncoderLayer",
     "DecoderLayer",
+    "EncoderLayer",
+    "FeedForward",
+    "MultiHeadAttention",
+    # Models
+    "WhisperDecoder",
+    "WhisperEncoder",
+    "WhisperModel",
     # Factories
-    "create_whisper_tiny",
     "create_whisper_base",
     "create_whisper_small",
-    # Utilities
+    "create_whisper_tiny",
+    # Weight loading
     "download_whisper_weights",
     "get_whisper_config",
+    "load_weights_into_nnx_model",
+    "map_huggingface_to_nnx",
     "print_model_info",
 ]
