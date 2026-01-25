@@ -16,39 +16,79 @@ import numpy as np
 import soundfile as sf
 
 from whisper_jax import SAMPLE_RATE, Whisper, load_audio
-from whisper_jax.alignment import get_vad_speech_segments
 
-# Filler words (hesitations and verbal tics)
-# Note: "like", "so", "well" are only fillers when standalone
+# Filler words by language (hesitations and verbal tics)
 FILLER_WORDS = {
-    "um", "uh", "uhm", "uhh", "umm", "er", "err", "ah", "ahh",
-    "euh", "hm", "hmm", "huh", "mhm", "uh-huh", "mm", "mmm",
+    "en": {
+        "um", "uh", "uhm", "uhh", "umm", "er", "err", "ah", "ahh",
+        "hm", "hmm", "huh", "mhm", "uh-huh", "mm", "mmm",
+    },
+    "fr": {
+        "euh", "euhh", "heu", "heuu", "bah", "ben", "hm", "hmm",
+        "ah", "oh", "ouais",
+    },
+    "de": {
+        "äh", "ähm", "öh", "öhm", "hm", "hmm", "na", "naja", "tja",
+    },
+    "es": {
+        "eh", "ehh", "em", "emm", "ah", "ahh", "este", "pues", "bueno",
+        "hm", "hmm", "mm",
+    },
+    "it": {
+        "eh", "ehm", "uhm", "ah", "beh", "mah", "cioè", "allora",
+        "hm", "hmm",
+    },
+    "pt": {
+        "é", "eh", "hum", "humm", "ah", "ahh", "então", "tipo",
+        "hm", "hmm",
+    },
+    "nl": {
+        "eh", "ehm", "uh", "uhm", "hm", "hmm", "nou", "ja",
+    },
+    "pl": {
+        "yyy", "eee", "eem", "hm", "hmm", "no", "znaczy",
+    },
+    "ru": {
+        "э", "ээ", "эм", "ну", "вот", "это", "типа",
+    },
+    "ja": {
+        "えー", "えーと", "あの", "その", "まあ", "うーん",
+    },
+    "zh": {
+        "嗯", "呃", "那个", "这个", "就是",
+    },
 }
 
 
 @dataclass
-class SpeechSegment:
-    """A segment of speech to keep."""
+class WordSegment:
+    """A word segment with timing and filler status."""
     start: float
     end: float
     text: str
     is_filler: bool = False
 
 
-def is_filler(word: str) -> bool:
-    """Check if a word is a filler word."""
-    return word.lower().strip().rstrip(".,!?") in FILLER_WORDS
+def get_filler_words(lang: str) -> set[str]:
+    """Get filler words for a language, falling back to English."""
+    return FILLER_WORDS.get(lang, FILLER_WORDS["en"])
+
+
+def is_filler(word: str, lang: str = "en") -> bool:
+    """Check if a word is a filler word in the given language."""
+    filler_set = get_filler_words(lang)
+    return word.lower().strip().rstrip(".,!?") in filler_set
 
 
 def merge_segments(
-    segments: list[SpeechSegment],
+    segments: list[WordSegment],
     max_gap: float = 0.3,
-) -> list[SpeechSegment]:
+) -> list[WordSegment]:
     """Merge adjacent non-filler segments with small gaps."""
     if not segments:
         return []
 
-    # Filter out filler-only segments
+    # Filter out filler segments
     kept = [s for s in segments if not s.is_filler]
     if not kept:
         return []
@@ -58,7 +98,7 @@ def merge_segments(
         gap = seg.start - merged[-1].end
         if gap <= max_gap:
             # Merge with previous
-            merged[-1] = SpeechSegment(
+            merged[-1] = WordSegment(
                 start=merged[-1].start,
                 end=seg.end,
                 text=merged[-1].text + " " + seg.text,
@@ -71,7 +111,7 @@ def merge_segments(
 
 def extract_and_join(
     audio: np.ndarray,
-    segments: list[SpeechSegment],
+    segments: list[WordSegment],
     silence_duration: float = 0.2,
     crossfade_ms: int = 10,
 ) -> np.ndarray:
@@ -143,6 +183,11 @@ def main():
         "-o",
         help="Output file (default: {input}_cleaned.mp3)",
     )
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Show timing breakdown",
+    )
     args = parser.parse_args()
 
     input_path = Path(args.audio_file)
@@ -150,16 +195,22 @@ def main():
         input_path.with_stem(input_path.stem + "_cleaned").with_suffix(".mp3")
     )
 
+    # Show language info
+    if args.lang not in FILLER_WORDS:
+        print(f"Note: No filler words for '{args.lang}', using English fillers")
+
     # Load audio
     print(f"Loading: {input_path}")
     audio = load_audio(str(input_path))
     duration = len(audio) / SAMPLE_RATE
     print(f"  Duration: {duration:.2f}s")
 
-    # Transcribe
+    # Transcribe with refined word timestamps
     print(f"\nTranscribing with {args.model} model...")
     whisper = Whisper.load(args.model)
-    result = whisper.transcribe(str(input_path), language=args.lang, word_timestamps=True)
+    if args.profile:
+        whisper.warmup(word_timestamps=True)
+    result = whisper.transcribe(str(input_path), language=args.lang, word_timestamps=True, _profile=args.profile)
 
     if not result.words:
         print("No speech detected.")
@@ -168,49 +219,34 @@ def main():
     print(f"  Found {len(result.words)} words")
     print(f"  Text: {result.text[:60]}{'...' if len(result.text) > 60 else ''}")
 
-    # Get VAD segments
-    print("\nAnalyzing speech segments...")
-    vad_segments = get_vad_speech_segments(audio)
-    print(f"  VAD found {len(vad_segments)} speech segments")
-
-    # Map words to VAD segments and detect fillers
+    # Build word segments directly from refined timestamps
     segments = []
-    for vad_start, vad_end in vad_segments:
-        # Find words that fall within this VAD segment
-        words_in_segment = []
-        for w in result.words:
-            word_center = (w.start + w.end) / 2
-            if vad_start <= word_center <= vad_end:
-                words_in_segment.append(w.word.strip())
+    filler_count = 0
 
-        # Check if segment is entirely fillers
-        if words_in_segment:
-            filler_count = sum(1 for w in words_in_segment if is_filler(w))
-            # Only mark as filler if ALL words are fillers
-            is_filler_segment = filler_count == len(words_in_segment) and filler_count > 0
-            text = " ".join(words_in_segment)
-        else:
-            is_filler_segment = False
-            text = ""
+    print("\nWord analysis:")
+    for w in result.words:
+        word_text = w.word.strip()
+        is_filler_word = is_filler(word_text, args.lang) and not args.keep_fillers
+        status = "DISCARD" if is_filler_word else "KEEP"
+        print(f"  [{w.start:6.2f}s - {w.end:6.2f}s] {status:8} \"{word_text}\"")
 
-        segments.append(SpeechSegment(
-            start=vad_start,
-            end=vad_end,
-            text=text,
-            is_filler=is_filler_segment and not args.keep_fillers,
+        if is_filler_word:
+            filler_count += 1
+
+        segments.append(WordSegment(
+            start=w.start,
+            end=w.end,
+            text=word_text,
+            is_filler=is_filler_word,
         ))
 
-    # Report fillers found
-    filler_segments = [s for s in segments if s.is_filler]
-    if filler_segments and not args.keep_fillers:
-        print(f"\nRemoving {len(filler_segments)} filler segment(s):")
-        for s in filler_segments:
-            print(f"    [{s.start:.2f}s - {s.end:.2f}s] \"{s.text}\"")
+    if filler_count > 0:
+        print(f"\nRemoving {filler_count} filler word(s)")
 
     # Merge segments
     max_gap = args.max_silence / 1000
     merged = merge_segments(segments, max_gap=max_gap)
-    print(f"\nKept {len(merged)} segment(s) after merging")
+    print(f"Kept {len(merged)} segment(s) after merging")
 
     # Extract and export
     print("\nExtracting audio...")

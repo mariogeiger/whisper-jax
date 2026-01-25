@@ -198,7 +198,7 @@ class Whisper:
         Args:
             audio: Path to audio file or numpy array (float32, 16kHz)
             language: Language code (e.g., "en", "fr", "de")
-            word_timestamps: Whether to compute word-level timestamps
+            word_timestamps: Whether to compute word-level timestamps (refined via VAD)
             _profile: If True, print timing breakdown
 
         Returns:
@@ -209,11 +209,6 @@ class Whisper:
         def _time(name: str, start: float) -> None:
             if _profile:
                 timings[name] = timings.get(name, 0.0) + time.perf_counter() - start
-
-        # Lazy warmup: transcription on first call, alignment on first word_timestamps
-        self._warmup_transcription()
-        if word_timestamps:
-            self._warmup_alignment()
 
         # Load audio if path
         t0 = time.perf_counter()
@@ -291,6 +286,14 @@ class Whisper:
         t0 = time.perf_counter()
         text = self.tokenizer.decode(all_text_tokens)
         _time("decode_text", t0)
+
+        # Refine word timestamps using VAD
+        if word_timestamps and all_words:
+            from whisper_jax.alignment import refine_word_timestamps
+
+            t0 = time.perf_counter()
+            all_words = refine_word_timestamps(audio, all_words)
+            _time("refine_timestamps", t0)
 
         if _profile:
             print("\n=== Profiling Breakdown ===")
