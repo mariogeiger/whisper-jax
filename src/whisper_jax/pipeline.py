@@ -1,5 +1,7 @@
 """High-level Whisper transcription API."""
 
+from __future__ import annotations
+
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,12 +20,6 @@ from whisper_jax.core.model import (
     create_whisper_tiny,
 )
 from whisper_jax.utils.audio_io import load_audio, normalize_audio
-from whisper_jax.utils.dtw import (
-    ALIGNMENT_TOKEN_BUFFER,
-    WordTiming,
-    get_word_timestamps,
-    warmup_dtw,
-)
 from whisper_jax.utils.tokenizer import (
     EOT,
     LANG_TOKENS,
@@ -34,6 +30,9 @@ from whisper_jax.utils.tokenizer import (
     load_whisper_vocab,
 )
 from whisper_jax.utils.weights import load_pretrained_weights
+
+# Fixed token buffer size for alignment (prompt=4 + max_tokens=200 + EOT=1 = 205)
+ALIGNMENT_TOKEN_BUFFER = 205
 
 # Model configurations: name -> (huggingface_id, create_fn)
 _MODEL_CONFIGS = {
@@ -57,7 +56,7 @@ class TranscriptionResult:
     """Result of a transcription."""
 
     text: str
-    words: list[WordTiming] | None
+    words: list | None  # list[WordTiming] when alignment deps installed
     language: str
     duration: float
 
@@ -105,7 +104,7 @@ class Whisper:
         cls,
         model_name: str = "tiny",
         max_tokens: int = 200,
-    ) -> "Whisper":
+    ) -> Whisper:
         """Load a Whisper model by name.
 
         Args:
@@ -164,6 +163,9 @@ class Whisper:
         """Warmup alignment JIT + Numba DTW (~15s for small model)."""
         if self._alignment_ready:
             return
+
+        # Import on demand - raises clear error if deps missing
+        from whisper_jax.alignment import warmup_dtw
 
         # Alignment needs transcription warmed up first
         self._warmup_transcription()
@@ -232,7 +234,7 @@ class Whisper:
         # Process in chunks
         chunk_size = N_SAMPLES
         all_text_tokens: list[int] = []
-        all_words: list[WordTiming] = []
+        all_words: list = []
 
         num_chunks = (len(audio) + chunk_size - 1) // chunk_size
 
@@ -265,6 +267,8 @@ class Whisper:
 
             # Get word timestamps if requested
             if word_timestamps:
+                from whisper_jax.alignment import get_word_timestamps
+
                 t0 = time.perf_counter()
                 words = get_word_timestamps(
                     model=self.model,

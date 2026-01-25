@@ -149,9 +149,13 @@ def find_word_alignments(
     jumps = np.pad(np.diff(text_indices), (1, 0), constant_values=1).astype(bool)
     jump_times = time_indices[jumps] / TOKENS_PER_SECOND
 
+    # Extend jump_times with audio end to fix zero-duration bug for last word
+    max_time = num_frames / TOKENS_PER_SECOND
+    jump_times_extended = np.append(jump_times, max_time)
+
     # Map to times
     start_times = jump_times[np.minimum(word_boundaries[:-1], len(jump_times) - 1)]
-    end_times = jump_times[np.minimum(word_boundaries[1:], len(jump_times) - 1)]
+    end_times = jump_times_extended[np.minimum(word_boundaries[1:], len(jump_times_extended) - 1)]
 
     # Word probabilities
     if token_probs is not None:
@@ -253,3 +257,186 @@ def get_word_timestamps(
         medfilt_width=medfilt_width,
         prompt_length=prompt_len,
     )
+
+
+def get_vad_speech_segments(
+    audio: np.ndarray,
+    sample_rate: int = 16000,
+    aggressiveness: int = 2,
+    frame_duration_ms: int = 30,
+) -> list[tuple[float, float]]:
+    """Detect speech segments using WebRTC VAD.
+
+    Args:
+        audio: Audio samples (float32, mono)
+        sample_rate: Sample rate (must be 8000, 16000, 32000, or 48000)
+        aggressiveness: VAD aggressiveness (0-3, higher = more aggressive filtering)
+        frame_duration_ms: Frame duration in ms (10, 20, or 30)
+
+    Returns:
+        List of (start_time, end_time) tuples for speech segments
+
+    Raises:
+        ImportError: If webrtcvad is not installed
+    """
+    import webrtcvad
+
+    vad = webrtcvad.Vad(aggressiveness)
+
+    # Convert to 16-bit PCM
+    audio_int16 = (audio * 32767).astype(np.int16)
+    frame_size = int(sample_rate * frame_duration_ms / 1000)
+
+    # Process frames
+    speech_frames = []
+    for i in range(0, len(audio_int16) - frame_size, frame_size):
+        frame = audio_int16[i : i + frame_size].tobytes()
+        try:
+            is_speech = vad.is_speech(frame, sample_rate)
+        except Exception:
+            is_speech = False
+        speech_frames.append((i / sample_rate, is_speech))
+
+    # Merge consecutive speech frames into segments
+    segments = []
+    current_start = None
+
+    for time, is_speech in speech_frames:
+        if is_speech and current_start is None:
+            current_start = time
+        elif not is_speech and current_start is not None:
+            segments.append((current_start, time))
+            current_start = None
+
+    if current_start is not None:
+        segments.append((current_start, len(audio) / sample_rate))
+
+    return segments
+
+
+def refine_word_timestamps(
+    audio: np.ndarray,
+    words: list[WordTiming],
+    sample_rate: int = 16000,
+    energy_threshold: float = 0.01,
+    min_word_duration: float = 0.05,
+    use_vad: bool = True,
+    vad_aggressiveness: int = 2,
+) -> list[WordTiming]:
+    """Refine word timestamps using VAD and energy analysis.
+
+    Whisper's attention-based timestamps often include silence. This function
+    shrinks word boundaries to where speech actually exists.
+
+    Args:
+        audio: Audio samples (float32, 16kHz mono)
+        words: List of WordTiming objects from Whisper
+        sample_rate: Audio sample rate
+        energy_threshold: RMS energy threshold for speech detection
+        min_word_duration: Minimum word duration in seconds
+        use_vad: Whether to use WebRTC VAD for speech detection
+        vad_aggressiveness: VAD aggressiveness (0-3)
+
+    Returns:
+        List of WordTiming objects with refined timestamps
+    """
+    if not words:
+        return words
+
+    # Get VAD speech segments
+    vad_segments = []
+    if use_vad:
+        vad_segments = get_vad_speech_segments(
+            audio, sample_rate, aggressiveness=vad_aggressiveness
+        )
+
+    def find_energy_bounds(start_time: float, end_time: float) -> tuple[float, float]:
+        """Find energy bounds within a time range."""
+        start_sample = max(0, int(start_time * sample_rate))
+        end_sample = min(len(audio), int(end_time * sample_rate))
+
+        if end_sample <= start_sample:
+            return start_time, end_time
+
+        segment = audio[start_sample:end_sample]
+        frame_size = int(0.01 * sample_rate)
+
+        energies = []
+        for i in range(0, len(segment) - frame_size, frame_size):
+            frame = segment[i : i + frame_size]
+            rms = np.sqrt(np.mean(frame**2))
+            energies.append((i, rms))
+
+        if not energies:
+            return start_time, end_time
+
+        above_threshold = [(i, e) for i, e in energies if e > energy_threshold]
+        if not above_threshold:
+            return start_time, end_time
+
+        first_idx = above_threshold[0][0]
+        last_idx = above_threshold[-1][0] + frame_size
+
+        return (
+            start_time + first_idx / sample_rate,
+            start_time + last_idx / sample_rate,
+        )
+
+    # First pass: find all VAD segments that overlap with each word's Whisper range
+    # Words and VAD segments are both roughly in order, but Whisper can be inaccurate
+    refined = []
+    vad_ptr = 0  # Pointer to track VAD progress
+
+    for word in words:
+        # Find all VAD segments that overlap with this word's Whisper window
+        overlapping_vad = []
+
+        for i in range(vad_ptr, len(vad_segments)):
+            seg_start, seg_end = vad_segments[i]
+
+            # Check if VAD segment is past the word (no more overlaps possible)
+            if seg_start > word.end:
+                break
+
+            # Check if VAD segment overlaps with word
+            if seg_end > word.start and seg_start < word.end:
+                overlapping_vad.append((seg_start, seg_end))
+                # Don't advance vad_ptr yet - next word might also overlap
+
+        if overlapping_vad:
+            # Advance vad_ptr to first overlapping segment
+            for i in range(vad_ptr, len(vad_segments)):
+                if vad_segments[i] in overlapping_vad:
+                    vad_ptr = i
+                    break
+
+            # Use the first overlapping segment (most likely to contain this word)
+            # For better accuracy, use energy to find the actual speech within it
+            vad_start, vad_end = overlapping_vad[0]
+
+            # Refine within VAD segment using energy
+            new_start, new_end = find_energy_bounds(vad_start, vad_end)
+
+            # Ensure we stay within VAD bounds
+            new_start = max(vad_start, new_start)
+            new_end = min(vad_end, new_end)
+        else:
+            # No VAD overlap - use energy-only refinement within Whisper bounds
+            new_start, new_end = find_energy_bounds(word.start, word.end)
+
+        # Ensure minimum duration
+        if new_end - new_start < min_word_duration:
+            center = (new_start + new_end) / 2
+            new_start = center - min_word_duration / 2
+            new_end = center + min_word_duration / 2
+
+        refined.append(
+            WordTiming(
+                word=word.word,
+                start=float(new_start),
+                end=float(new_end),
+                probability=word.probability,
+            )
+        )
+
+    return refined

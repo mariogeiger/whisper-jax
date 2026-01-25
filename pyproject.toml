@@ -48,6 +48,9 @@ weights = [
 alignment = [
     "numba>=0.58.0",
     "scipy>=1.10.0",
+    "webrtcvad>=2.0.10",
+    "soundfile>=0.12.0",
+    "setuptools",  # Required by webrtcvad for pkg_resources
 ]
 demo = [
     "fastapi>=0.100.0",
@@ -60,6 +63,7 @@ dev = [
     "pytest-cov>=4.0",
     "ruff>=0.1.0",
     "mypy>=1.0",
+    "nox>=2023.4.22",
 ]
 all = [
     "whisper-jax[weights,alignment,demo,dev]",
@@ -133,6 +137,8 @@ module = [
     "safetensors.*",
     "numba.*",
     "scipy.*",
+    "webrtcvad.*",
+    "soundfile.*",
 ]
 ignore_missing_imports = true
 
