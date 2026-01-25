@@ -1,18 +1,8 @@
 # Whisper JAX
 
-**A clean, simple JAX implementation of OpenAI's Whisper speech recognition model.**
+A clean, simple JAX implementation of OpenAI's Whisper speech recognition model.
 
-Pure JAX/Flax NNX implementation that's easy to understand, modify, and use.
-
----
-
-## Why Whisper JAX?
-
-- **Simple API**: Just `Whisper.load()` and `transcribe()`
-- **Fast**: JAX's JIT compilation for speed
-- **Hackable**: Clean, readable code
-- **Word Timestamps**: Built-in word-level alignment
-- **Lightweight**: Minimal dependencies
+Whisper JAX is a pure JAX/Flax NNX implementation that's easy to understand, modify, and use. Whether you're transcribing podcasts, generating subtitles, or building speech applications, you can get started in just a few lines of code.
 
 ---
 
@@ -24,13 +14,13 @@ Install directly from GitHub:
 pip install git+https://github.com/mariogeiger/whisper-jax.git
 ```
 
-With word timestamp support (requires numba and scipy):
+For word-level timestamps (requires numba and scipy):
 
 ```bash
 pip install "whisper-jax[alignment] @ git+https://github.com/mariogeiger/whisper-jax.git"
 ```
 
-Or clone and install locally:
+For local development:
 
 ```bash
 git clone https://github.com/mariogeiger/whisper-jax.git
@@ -45,34 +35,35 @@ pip install -e ".[alignment]"
 ```python
 from whisper_jax import Whisper
 
-# Load a model
-whisper = Whisper.load("tiny")  # or "base", "small", "medium", "large-v3"
-
-# Transcribe audio
+whisper = Whisper.load("tiny")
 result = whisper.transcribe("audio.mp3")
 print(result.text)
 ```
 
-### Word-Level Timestamps
+That's it! The first call compiles the model with JAX's JIT, then subsequent calls are fast.
 
-```python
-from whisper_jax import Whisper
+---
 
-whisper = Whisper.load("tiny")
-result = whisper.transcribe("audio.mp3", word_timestamps=True)
+## Examples
 
-for word in result.words:
-    print(f"[{word.start:.2f}s - {word.end:.2f}s] {word.word}")
-```
+The `examples/` folder contains ready-to-use scripts:
 
-### Multiple Languages
+| Example | Description |
+|---------|-------------|
+| `word_timestamps.py` | Get word-level timing, export SRT/JSON subtitles |
+| `clean_audio.py` | Remove filler words ("um", "uh") and silences |
+| `demo_server.py` | Real-time browser-based transcription demo |
+| `compare_implementations.py` | Verify JAX outputs match PyTorch reference |
 
-```python
-# Transcribe French audio
-result = whisper.transcribe("french_audio.mp3", language="fr")
+```bash
+# Generate SRT subtitles
+python examples/word_timestamps.py audio.mp3 --format srt > subtitles.srt
 
-# See available languages
-print(whisper.available_languages)
+# Clean up audio by removing filler words
+python examples/clean_audio.py audio.mp3 --lang en
+
+# Run the web demo (requires: pip install ".[demo]")
+python examples/demo_server.py
 ```
 
 ---
@@ -89,31 +80,21 @@ print(whisper.available_languages)
 
 ---
 
-## Examples
+## Features
 
-Check out the `examples/` folder:
-
-- **`word_timestamps.py`** - Transcribe with word-level timestamps, output SRT/JSON
-- **`demo_server.py`** - Real-time browser-based transcription demo
-- **`compare_implementations.py`** - Verify outputs match PyTorch reference
-
-```bash
-# Transcribe with word timestamps
-python examples/word_timestamps.py audio.mp3 --model base
-
-# Generate SRT subtitles
-python examples/word_timestamps.py audio.mp3 --format srt > subtitles.srt
-
-# Run the web demo
-pip install ".[demo]"
-python examples/demo_server.py
-```
+- **Simple API**: Just `Whisper.load()` and `transcribe()`
+- **Fast**: JAX's JIT compilation for speed
+- **Hackable**: Clean, readable code
+- **Word Timestamps**: Built-in word-level alignment via DTW
+- **Lightweight**: Minimal dependencies
+- **Multi-language**: Supports all Whisper languages
+- **Long Audio**: Automatic chunking for audio over 30 seconds
 
 ---
 
 ## Advanced Usage
 
-For users who need lower-level access:
+For lower-level access to the model:
 
 ```python
 from whisper_jax import (
@@ -130,16 +111,6 @@ load_pretrained_weights(model, "openai/whisper-tiny")
 # Process audio
 mel = log_mel_spectrogram(audio_array)
 ```
-
----
-
-## Features
-
-- **Pure JAX/Flax NNX**: Modern, functional API
-- **Load HuggingFace weights**: Use pretrained OpenAI models
-- **Word-level timestamps**: DTW-based alignment on cross-attention
-- **Chunking**: Automatic handling of long audio (>30s)
-- **Clean architecture**: Separate pure JAX code from utilities
 
 ---
 
@@ -164,20 +135,14 @@ src/whisper_jax/
 
 ---
 
-## Contributing
+## Acknowledgments
 
-Contributions are welcome! The codebase is intentionally kept simple and readable.
+- OpenAI for the original [Whisper model](https://github.com/openai/whisper)
+- HuggingFace for [hosting pretrained weights](https://huggingface.co/openai)
+- Google for [JAX](https://github.com/google/jax) and [Flax](https://github.com/google/flax)
 
 ---
 
 ## License
 
 MIT License - See LICENSE file for details.
-
----
-
-## Acknowledgments
-
-- OpenAI for the original [Whisper model](https://github.com/openai/whisper)
-- HuggingFace for [hosting pretrained weights](https://huggingface.co/openai)
-- Google for [JAX](https://github.com/google/jax) and [Flax](https://github.com/google/flax)
