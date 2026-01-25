@@ -20,42 +20,127 @@ from whisper_jax import SAMPLE_RATE, Whisper, load_audio
 # Filler words by language (hesitations and verbal tics)
 FILLER_WORDS = {
     "en": {
-        "um", "uh", "uhm", "uhh", "umm", "er", "err", "ah", "ahh",
-        "hm", "hmm", "huh", "mhm", "uh-huh", "mm", "mmm",
+        "um",
+        "uh",
+        "uhm",
+        "uhh",
+        "umm",
+        "er",
+        "err",
+        "ah",
+        "ahh",
+        "hm",
+        "hmm",
+        "huh",
+        "mhm",
+        "uh-huh",
+        "mm",
+        "mmm",
     },
     "fr": {
-        "euh", "euhh", "heu", "heuu", "bah", "ben", "hm", "hmm",
-        "ah", "oh", "ouais",
+        "euh",
+        "euhh",
+        "heu",
+        "heuu",
+        "bah",
+        "ben",
+        "hm",
+        "hmm",
+        "ah",
+        "oh",
+        "ouais",
     },
     "de": {
-        "äh", "ähm", "öh", "öhm", "hm", "hmm", "na", "naja", "tja",
+        "äh",
+        "ähm",
+        "öh",
+        "öhm",
+        "hm",
+        "hmm",
+        "na",
+        "naja",
+        "tja",
     },
     "es": {
-        "eh", "ehh", "em", "emm", "ah", "ahh", "este", "pues", "bueno",
-        "hm", "hmm", "mm",
+        "eh",
+        "ehh",
+        "em",
+        "emm",
+        "ah",
+        "ahh",
+        "este",
+        "pues",
+        "bueno",
+        "hm",
+        "hmm",
+        "mm",
     },
     "it": {
-        "eh", "ehm", "uhm", "ah", "beh", "mah", "cioè", "allora",
-        "hm", "hmm",
+        "eh",
+        "ehm",
+        "uhm",
+        "ah",
+        "beh",
+        "mah",
+        "cioè",
+        "allora",
+        "hm",
+        "hmm",
     },
     "pt": {
-        "é", "eh", "hum", "humm", "ah", "ahh", "então", "tipo",
-        "hm", "hmm",
+        "é",
+        "eh",
+        "hum",
+        "humm",
+        "ah",
+        "ahh",
+        "então",
+        "tipo",
+        "hm",
+        "hmm",
     },
     "nl": {
-        "eh", "ehm", "uh", "uhm", "hm", "hmm", "nou", "ja",
+        "eh",
+        "ehm",
+        "uh",
+        "uhm",
+        "hm",
+        "hmm",
+        "nou",
+        "ja",
     },
     "pl": {
-        "yyy", "eee", "eem", "hm", "hmm", "no", "znaczy",
+        "yyy",
+        "eee",
+        "eem",
+        "hm",
+        "hmm",
+        "no",
+        "znaczy",
     },
     "ru": {
-        "э", "ээ", "эм", "ну", "вот", "это", "типа",
+        "э",
+        "ээ",
+        "эм",
+        "ну",
+        "вот",
+        "это",
+        "типа",
     },
     "ja": {
-        "えー", "えーと", "あの", "その", "まあ", "うーん",
+        "えー",
+        "えーと",
+        "あの",
+        "その",
+        "まあ",
+        "うーん",
     },
     "zh": {
-        "嗯", "呃", "那个", "这个", "就是",
+        "嗯",
+        "呃",
+        "那个",
+        "这个",
+        "就是",
     },
 }
 
@@ -63,6 +148,7 @@ FILLER_WORDS = {
 @dataclass
 class WordSegment:
     """A word segment with timing and filler status."""
+
     start: float
     end: float
     text: str
@@ -210,7 +296,9 @@ def main():
     whisper = Whisper.load(args.model)
     if args.profile:
         whisper.warmup(word_timestamps=True)
-    result = whisper.transcribe(str(input_path), language=args.lang, word_timestamps=True, _profile=args.profile)
+    result = whisper.transcribe(
+        str(input_path), language=args.lang, word_timestamps=True, _profile=args.profile
+    )
 
     if not result.words:
         print("No speech detected.")
@@ -228,17 +316,19 @@ def main():
         word_text = w.word.strip()
         is_filler_word = is_filler(word_text, args.lang) and not args.keep_fillers
         status = "DISCARD" if is_filler_word else "KEEP"
-        print(f"  [{w.start:6.2f}s - {w.end:6.2f}s] {status:8} \"{word_text}\"")
+        print(f'  [{w.start:6.2f}s - {w.end:6.2f}s] {status:8} "{word_text}"')
 
         if is_filler_word:
             filler_count += 1
 
-        segments.append(WordSegment(
-            start=w.start,
-            end=w.end,
-            text=word_text,
-            is_filler=is_filler_word,
-        ))
+        segments.append(
+            WordSegment(
+                start=w.start,
+                end=w.end,
+                text=word_text,
+                is_filler=is_filler_word,
+            )
+        )
 
     if filler_count > 0:
         print(f"\nRemoving {filler_count} filler word(s)")

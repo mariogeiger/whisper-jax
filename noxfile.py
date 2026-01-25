@@ -41,9 +41,7 @@ def test_deps(session: nox.Session) -> None:
     session.run(
         "python",
         "-c",
-        "import fastapi; "
-        "import uvicorn; "
-        "print('Demo deps OK')",
+        "import fastapi; import uvicorn; print('Demo deps OK')",
     )
 
 

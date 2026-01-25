@@ -13,7 +13,8 @@ import json
 import sys
 import time
 
-from whisper_jax import Whisper, WordTiming
+from whisper_jax import Whisper
+from whisper_jax.alignment import WordTiming
 
 
 def format_srt_time(seconds: float) -> str:

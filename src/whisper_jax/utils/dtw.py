@@ -160,8 +160,7 @@ def find_word_alignments(
     # Word probabilities
     if token_probs is not None:
         word_probs = [
-            float(np.mean(token_probs[i:j])) if j > i else 0.0
-            for i, j in pairwise(word_boundaries)
+            float(np.mean(token_probs[i:j])) if j > i else 0.0 for i, j in pairwise(word_boundaries)
         ]
     else:
         word_probs = [1.0] * len(words)

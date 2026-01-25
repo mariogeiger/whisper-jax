@@ -212,7 +212,7 @@ class Whisper:
 
         # Load audio if path
         t0 = time.perf_counter()
-        if isinstance(audio, (str, Path)):
+        if isinstance(audio, str | Path):
             audio = load_audio(audio)
         else:
             audio = normalize_audio(audio)
