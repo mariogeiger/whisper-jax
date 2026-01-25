@@ -22,14 +22,21 @@ from whisper_jax.core.model import (
 from whisper_jax.utils.audio_io import load_audio, normalize_audio
 from whisper_jax.utils.tokenizer import (
     EOT,
+    FRAMES_PER_SECOND,
+    INPUT_STRIDE,
     LANG_TOKENS,
     NO_TIMESTAMPS,
     SOT,
+    TIMESTAMP_BEGIN,
     TRANSCRIBE,
     WhisperTokenizer,
+    is_timestamp_token,
     load_whisper_vocab,
 )
 from whisper_jax.utils.weights import load_pretrained_weights
+
+# Hop length in samples (for seek calculations)
+HOP_LENGTH = 160
 
 # Fixed token buffer size for alignment (prompt=4 + max_tokens=200 + EOT=1 = 205)
 ALIGNMENT_TOKEN_BUFFER = 205
@@ -91,13 +98,13 @@ class Whisper:
         self.model_name = model_name
         self.max_tokens = max_tokens
 
-        # Create JIT-compiled functions
-        self._transcribe_fn = create_transcribe_fn(model, max_tokens=max_tokens)
+        self._transcribe_fn = create_transcribe_fn(
+            model, max_tokens=max_tokens, use_timestamps=False
+        )
+        self._transcribe_ts_fn = create_transcribe_fn(
+            model, max_tokens=max_tokens, use_timestamps=True
+        )
         self._alignment_fn = create_alignment_fn(model)
-
-        # Warmup tracking
-        self._transcription_ready = False
-        self._alignment_ready = False
 
     @classmethod
     def load(
@@ -142,14 +149,12 @@ class Whisper:
                 the first word_timestamps=True call much faster.
         """
         self._warmup_transcription()
+        self._warmup_transcription_ts()
         if word_timestamps:
             self._warmup_alignment()
 
     def _warmup_transcription(self) -> None:
-        """Warmup transcription JIT (~15s for small model)."""
-        if self._transcription_ready:
-            return
-
+        """Warmup no-timestamp transcription JIT (~15s for small model)."""
         dummy_audio = jnp.zeros(N_SAMPLES, dtype=jnp.float32)
         lang_token = jnp.array(LANG_TOKENS["en"], dtype=jnp.int32)
         tokens, _ = self._transcribe_fn(dummy_audio, lang_token)
@@ -157,18 +162,19 @@ class Whisper:
         # Warmup JAX->Python int conversion (has first-call overhead)
         _ = [int(t) for t in tokens[:5]]
 
-        self._transcription_ready = True
+    def _warmup_transcription_ts(self) -> None:
+        """Warmup timestamp-enabled transcription JIT."""
+        dummy_audio = jnp.zeros(N_SAMPLES, dtype=jnp.float32)
+        lang_token = jnp.array(LANG_TOKENS["en"], dtype=jnp.int32)
+        tokens, _ = self._transcribe_ts_fn(dummy_audio, lang_token)
+
+        # Warmup JAX->Python int conversion
+        _ = [int(t) for t in tokens[:5]]
 
     def _warmup_alignment(self) -> None:
         """Warmup alignment JIT + Numba DTW (~15s for small model)."""
-        if self._alignment_ready:
-            return
-
         # Import on demand - raises clear error if deps missing
         from whisper_jax.alignment import warmup_dtw
-
-        # Alignment needs transcription warmed up first
-        self._warmup_transcription()
 
         dummy_audio = jnp.zeros(N_SAMPLES, dtype=jnp.float32)
         alignment_mask = get_alignment_mask(self.model_name)
@@ -184,8 +190,6 @@ class Whisper:
         # Warmup Numba DTW
         warmup_dtw()
 
-        self._alignment_ready = True
-
     def transcribe(
         self,
         audio: str | Path | np.ndarray,
@@ -193,7 +197,11 @@ class Whisper:
         word_timestamps: bool = False,
         _profile: bool = False,
     ) -> TranscriptionResult:
-        """Transcribe audio to text.
+        """Transcribe audio to text using seek-based sliding window.
+
+        This implementation uses timestamp tokens to determine chunk boundaries,
+        avoiding word splitting at fixed intervals. The approach mirrors the
+        official OpenAI Whisper implementation.
 
         Args:
             audio: Path to audio file or numpy array (float32, 16kHz)
@@ -218,7 +226,8 @@ class Whisper:
             audio = normalize_audio(audio)
         _time("load_audio", t0)
 
-        duration = len(audio) / SAMPLE_RATE
+        audio_duration = len(audio) / SAMPLE_RATE
+        content_frames = len(audio) // HOP_LENGTH  # Total frames in audio
 
         # Get language token
         if language not in LANG_TOKENS:
@@ -226,61 +235,87 @@ class Whisper:
             raise ValueError(f"Unknown language: {language}. Available: {available}")
         lang_token = jnp.array(LANG_TOKENS[language], dtype=jnp.int32)
 
-        # Process in chunks
-        chunk_size = N_SAMPLES
+        # Seek-based sliding window processing
         all_text_tokens: list[int] = []
         all_words: list = []
+        seek = 0  # Current position in frames
 
-        num_chunks = (len(audio) + chunk_size - 1) // chunk_size
+        while seek < content_frames:
+            # Calculate chunk bounds
+            time_offset = seek * HOP_LENGTH / SAMPLE_RATE
+            start_sample = seek * HOP_LENGTH
+            segment_frames = min(N_SAMPLES // HOP_LENGTH, content_frames - seek)
 
-        for chunk_idx in range(num_chunks):
-            start_sample = chunk_idx * chunk_size
-            end_sample = min(start_sample + chunk_size, len(audio))
+            # Extract chunk (always N_SAMPLES for model input, pad if needed)
+            end_sample = min(start_sample + N_SAMPLES, len(audio))
             chunk = audio[start_sample:end_sample]
-            time_offset = start_sample / SAMPLE_RATE
 
-            # Pad chunk to 30 seconds
             t0 = time.perf_counter()
-            if len(chunk) < chunk_size:
-                chunk = np.pad(chunk, (0, chunk_size - len(chunk)))
+            if len(chunk) < N_SAMPLES:
+                chunk = np.pad(chunk, (0, N_SAMPLES - len(chunk)))
             _time("pad_chunk", t0)
 
-            # Transcribe
+            # Transcribe with timestamps for proper seek handling
             t0 = time.perf_counter()
-            tokens, num_gen = self._transcribe_fn(jnp.array(chunk), lang_token)
-            tokens.block_until_ready()  # Force sync for accurate timing
+            tokens, num_gen = self._transcribe_ts_fn(jnp.array(chunk), lang_token)
+            tokens.block_until_ready()
             _time("transcribe_fn", t0)
 
             t0 = time.perf_counter()
-            text_tokens = self._extract_text_tokens(tokens, int(num_gen))
+            generated_tokens = [int(t) for t in tokens[4 : 4 + int(num_gen)]]
             _time("extract_tokens", t0)
 
-            if not text_tokens:
-                continue
+            # Parse segments from timestamp tokens and extract text tokens
+            text_tokens, last_timestamp_pos = self._parse_timestamp_tokens(
+                generated_tokens, segment_frames
+            )
 
-            all_text_tokens.extend(text_tokens)
+            if text_tokens:
+                all_text_tokens.extend(text_tokens)
 
-            # Get word timestamps if requested
-            if word_timestamps:
-                from whisper_jax.alignment import get_word_timestamps
+                # Get word timestamps if requested
+                if word_timestamps:
+                    from whisper_jax.alignment import get_word_timestamps
 
-                t0 = time.perf_counter()
-                words = get_word_timestamps(
-                    model=self.model,
-                    tokenizer=self.tokenizer,
-                    audio=chunk,
-                    text_tokens=text_tokens,
-                    model_name=self.model_name,
-                    language=language,
-                    _alignment_fn=self._alignment_fn,
-                )
-                _time("word_timestamps", t0)
+                    t0 = time.perf_counter()
+                    words = get_word_timestamps(
+                        model=self.model,
+                        tokenizer=self.tokenizer,
+                        audio=chunk,
+                        text_tokens=text_tokens,
+                        model_name=self.model_name,
+                        language=language,
+                        _alignment_fn=self._alignment_fn,
+                    )
+                    _time("word_timestamps", t0)
 
-                # Apply time offset for multi-chunk processing
-                for w in words:
-                    w.start += time_offset
-                    w.end += time_offset
-                    all_words.append(w)
+                    # Apply time offset and collect words
+                    for w in words:
+                        w.start += time_offset
+                        w.end += time_offset
+                        all_words.append(w)
+
+            # Determine next seek position
+            t0 = time.perf_counter()
+            if word_timestamps and all_words:
+                # Use word boundary for precise seeking
+                last_word_end = all_words[-1].end
+                if last_word_end > time_offset:
+                    seek = round(last_word_end * FRAMES_PER_SECOND)
+                else:
+                    seek += segment_frames
+            elif last_timestamp_pos is not None:
+                # Use timestamp token for seeking (like official Whisper)
+                # last_timestamp_pos is in 20ms units, convert to frames
+                seek += last_timestamp_pos * INPUT_STRIDE
+            else:
+                # Fallback: advance by segment size
+                seek += segment_frames
+            _time("seek_calc", t0)
+
+            # Safety check: ensure we always make progress
+            if seek <= (start_sample // HOP_LENGTH):
+                seek = (start_sample // HOP_LENGTH) + segment_frames
 
         # Decode full text
         t0 = time.perf_counter()
@@ -308,18 +343,60 @@ class Whisper:
             text=text,
             words=all_words if word_timestamps else None,
             language=language,
-            duration=duration,
+            duration=audio_duration,
         )
+
+    def _parse_timestamp_tokens(
+        self, tokens: list[int], segment_frames: int
+    ) -> tuple[list[int], int | None]:
+        """Parse generated tokens to extract text and find seek position.
+
+        Handles Whisper's timestamp token format where segments are bounded
+        by consecutive timestamp tokens (e.g., <|0.00|>text<|2.50|><|2.50|>text<|5.00|>).
+
+        Args:
+            tokens: Generated tokens (may include timestamps and text)
+            segment_frames: Number of frames in this segment (for fallback)
+
+        Returns:
+            (text_tokens, last_timestamp_pos):
+                - text_tokens: List of text tokens (excluding timestamps and EOT)
+                - last_timestamp_pos: Position of last timestamp in 20ms units,
+                  or None if no valid timestamp found
+        """
+        text_tokens: list[int] = []
+        last_timestamp_pos: int | None = None
+
+        # Find consecutive timestamp pairs and extract text between them
+        i = 0
+        while i < len(tokens):
+            token = tokens[i]
+
+            if token == EOT:
+                break
+
+            if is_timestamp_token(token):
+                # Record this timestamp position
+                last_timestamp_pos = token - TIMESTAMP_BEGIN
+
+                # Check for consecutive timestamps (segment boundary)
+                if i + 1 < len(tokens) and is_timestamp_token(tokens[i + 1]):
+                    # Two consecutive timestamps mark segment boundary
+                    # The second one is the start of the next segment
+                    i += 1
+                    continue
+            elif token < EOT:
+                # Regular text token
+                text_tokens.append(token)
+
+            i += 1
+
+        return text_tokens, last_timestamp_pos
 
     def _extract_text_tokens(self, tokens: jnp.ndarray, num_generated: int) -> list[int]:
         """Extract text tokens from full token buffer."""
         # Prompt is at indices 0-3, generated tokens start at index 4
         return [int(t) for t in tokens[4 : 4 + num_generated] if t != EOT and t < EOT]
-
-    @property
-    def _warmed_up(self) -> bool:
-        """Backward-compatible property for transcription readiness."""
-        return self._transcription_ready
 
     @property
     def available_languages(self) -> list[str]:

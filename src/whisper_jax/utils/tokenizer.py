@@ -38,6 +38,48 @@ EOT = 50257  # End of transcript
 TRANSCRIBE = 50359  # Transcribe task
 NO_TIMESTAMPS = 50363  # No timestamps mode
 
+# Timestamp token constants
+TIMESTAMP_BEGIN = 50364  # First timestamp token <|0.00|>
+TIMESTAMP_END = 51865  # Last timestamp token (30 seconds)
+TIME_PRECISION = 0.02  # 20ms per timestamp token
+FRAMES_PER_SECOND = 100  # 16000 / 160 (sample_rate / hop_length)
+INPUT_STRIDE = 2  # mel frames per output token
+
+
+def is_timestamp_token(token_id: int) -> bool:
+    """Check if a token is a timestamp token."""
+    return TIMESTAMP_BEGIN <= token_id <= TIMESTAMP_END
+
+
+def timestamp_to_seconds(token_id: int) -> float:
+    """Convert a timestamp token to seconds."""
+    if not is_timestamp_token(token_id):
+        raise ValueError(f"Token {token_id} is not a timestamp token")
+    return (token_id - TIMESTAMP_BEGIN) * TIME_PRECISION
+
+
+def seconds_to_timestamp_token(seconds: float) -> int:
+    """Convert seconds to the nearest timestamp token."""
+    token = round(seconds / TIME_PRECISION) + TIMESTAMP_BEGIN
+    return max(TIMESTAMP_BEGIN, min(token, TIMESTAMP_END))
+
+
+def extract_timestamp_positions(tokens: list[int]) -> list[tuple[int, float]]:
+    """Extract timestamp tokens and their positions in seconds.
+
+    Returns:
+        List of (token_index, time_in_seconds) tuples
+    """
+    return [(i, timestamp_to_seconds(t)) for i, t in enumerate(tokens) if is_timestamp_token(t)]
+
+
+def find_last_timestamp(tokens: list[int]) -> float | None:
+    """Find the last timestamp in a token sequence (in seconds)."""
+    for token in reversed(tokens):
+        if is_timestamp_token(token):
+            return timestamp_to_seconds(token)
+    return None
+
 
 class WhisperTokenizer:
     """Simple tokenizer for decoding Whisper output tokens."""

@@ -75,7 +75,7 @@ def get_alignment_mask(model_name: str) -> jnp.ndarray:
     return jnp.array(mask)
 
 
-def create_transcribe_fn(model, max_tokens: int = 100):
+def create_transcribe_fn(model, max_tokens: int = 100, use_timestamps: bool = False):
     """Create a JIT-compiled transcription function.
 
     This function creates a highly optimized transcription function that:
@@ -86,21 +86,28 @@ def create_transcribe_fn(model, max_tokens: int = 100):
     Args:
         model: WhisperModel instance
         max_tokens: Maximum tokens to generate (compile-time constant)
+        use_timestamps: If True, use timestamp mode for seek-based chunking.
+            When True, the model outputs timestamp tokens that indicate
+            segment boundaries, enabling proper handling of audio chunks.
 
     Returns:
         JIT-compiled function with signature:
             (audio: jax.Array, lang_token: jax.Array) -> (tokens, num_generated)
 
     Example:
-        transcribe = create_transcribe_fn(model)
+        transcribe = create_transcribe_fn(model, use_timestamps=True)
         tokens, n = transcribe(audio, jnp.array(50259))  # English
-        text_tokens = [int(t) for t in tokens[4:4+int(n)] if t < 50257]
-        text = tokenizer.decode(text_tokens)
+        # tokens may include timestamp tokens when use_timestamps=True
     """
     encoder = model.encoder
     decoder = model.decoder
     lm_head = model.lm_head
     EOT = 50257
+    NO_TIMESTAMPS = 50363
+    TIMESTAMP_BEGIN = 50364
+
+    # Use <|0.00|> as the initial timestamp when in timestamp mode
+    last_prompt_token = TIMESTAMP_BEGIN if use_timestamps else NO_TIMESTAMPS
 
     @jax.jit
     def transcribe(audio: jax.Array, lang_token: jax.Array) -> tuple[jax.Array, jax.Array]:
@@ -116,7 +123,7 @@ def create_transcribe_fn(model, max_tokens: int = 100):
         mel = log_mel_spectrogram(audio)
         enc_out = encoder(mel, deterministic=True)
 
-        prompt = jnp.array([50258, lang_token, 50359, 50363], dtype=jnp.int32)
+        prompt = jnp.array([50258, lang_token, 50359, last_prompt_token], dtype=jnp.int32)
         tokens = jnp.zeros(4 + max_tokens, dtype=jnp.int32).at[:4].set(prompt)
 
         def cond(state):
