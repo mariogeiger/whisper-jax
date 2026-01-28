@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Cleaner - Whisper JAX</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f172a;
+            color: #f8fafc;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 1.5rem;
+            background: #0f172a;
+            border-bottom: 1px solid #1e293b;
+            flex-shrink: 0;
+        }
+
+        h1 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, #3b82f6, #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            color: #94a3b8;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #94a3b8;
+            transition: background 0.3s, box-shadow 0.3s;
+        }
+
+        .status-dot.ready {
+            background: #22c55e;
+            box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
+        }
+
+        .status-dot.loading {
+            background: #3b82f6;
+            box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
+            animation: pulse 1s infinite;
+        }
+
+        .status-dot.error {
+            background: #ef4444;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        main {
+            flex: 1;
+            padding: 1.5rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 1.25rem;
+        }
+
+        .card-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #94a3b8;
+            margin-bottom: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        /* Upload Zone */
+        .upload-zone {
+            border: 2px dashed #334155;
+            border-radius: 12px;
+            padding: 2.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .upload-zone.has-file {
+            border-style: solid;
+            border-color: #22c55e;
+            background: rgba(34, 197, 94, 0.1);
+        }
+
+        .upload-icon {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 1rem;
+            color: #64748b;
+        }
+
+        .upload-text {
+            color: #94a3b8;
+            margin-bottom: 0.5rem;
+        }
+
+        .upload-hint {
+            font-size: 0.85rem;
+            color: #64748b;
+        }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            color: #e2e8f0;
+        }
+
+        .file-info .filename {
+            font-weight: 500;
+        }
+
+        .file-info .duration {
+            color: #94a3b8;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        /* Waveform */
+        .waveform-container {
+            position: relative;
+            height: 120px;
+            background: #0f172a;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        #waveformCanvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        .waveform-time {
+            position: absolute;
+            bottom: 4px;
+            right: 8px;
+            font-size: 0.75rem;
+            color: #64748b;
+            font-family: monospace;
+        }
+
+        /* Controls */
+        .controls-row {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .pill-select, .pill-button {
+            padding: 0.6rem 1rem;
+            background: #1e293b;
+            color: #e2e8f0;
+            border: 1px solid #334155;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .pill-select {
+            min-width: 100px;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            padding-right: 2rem;
+        }
+
+        .pill-select:hover, .pill-button:hover {
+            background-color: #334155;
+            border-color: #475569;
+        }
+
+        .pill-select:focus, .pill-button:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
+
+        .pill-select:disabled, .pill-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .pill-button.primary {
+            background: linear-gradient(135deg, #3b82f6, #6366f1);
+            border: none;
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .pill-button.primary:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+
+        .pill-button.success {
+            background: linear-gradient(135deg, #22c55e, #10b981);
+            border: none;
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .pill-button.success:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
+        }
+
+        .spacer {
+            flex: 1;
+        }
+
+        /* Word Grid */
+        .words-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            min-height: 60px;
+        }
+
+        .word-chip {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 0.4rem 0.6rem;
+            background: #0f172a;
+            border: 2px solid #22c55e;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-width: 50px;
+            max-width: 120px;
+            text-align: center;
+        }
+
+        .word-chip:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .word-chip.discarded {
+            border-color: #475569;
+            background: #1e293b;
+            opacity: 0.6;
+        }
+
+        .word-chip.discarded .word-text {
+            text-decoration: line-through;
+            color: #64748b;
+        }
+
+        .word-chip.filler {
+            border-color: #f97316;
+        }
+
+        .word-chip.filler.discarded {
+            border-color: #475569;
+        }
+
+        .word-text {
+            font-size: 0.9rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 100%;
+        }
+
+        .word-time {
+            font-size: 0.65rem;
+            color: #64748b;
+            font-family: monospace;
+            margin-top: 2px;
+        }
+
+        .empty-state {
+            color: #64748b;
+            text-align: center;
+            padding: 2rem;
+            font-style: italic;
+        }
+
+        /* Segments Panel */
+        .segments-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .segment-card {
+            background: #0f172a;
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            border-left: 3px solid #3b82f6;
+        }
+
+        .segment-time {
+            font-size: 0.75rem;
+            color: #64748b;
+            font-family: monospace;
+            margin-bottom: 0.25rem;
+        }
+
+        .segment-text {
+            font-size: 0.9rem;
+            color: #e2e8f0;
+            line-height: 1.4;
+        }
+
+        /* Export Section */
+        .export-row {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .gap-slider {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #94a3b8;
+            font-size: 0.85rem;
+        }
+
+        .gap-slider input[type="range"] {
+            width: 100px;
+            accent-color: #3b82f6;
+        }
+
+        .gap-slider .gap-value {
+            font-family: monospace;
+            min-width: 50px;
+        }
+
+        /* Stats */
+        .stats {
+            display: flex;
+            gap: 2rem;
+            font-size: 0.85rem;
+            color: #94a3b8;
+        }
+
+        .stat-value {
+            color: #e2e8f0;
+            font-weight: 500;
+        }
+
+        /* Hidden sections */
+        .hidden {
+            display: none !important;
+        }
+
+        /* Tooltip */
+        [data-tooltip] {
+            position: relative;
+        }
+
+        [data-tooltip]:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 0.4rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            white-space: nowrap;
+            z-index: 100;
+            margin-bottom: 4px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>Audio Cleaner</h1>
+        <div class="status">
+            <div class="status-dot ready" id="statusDot"></div>
+            <span id="statusText">Ready</span>
+        </div>
+    </header>
+
+    <main>
+        <!-- Upload Section -->
+        <div class="card">
+            <div class="upload-zone" id="uploadZone">
+                <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <p class="upload-text">Drop audio file here or click to upload</p>
+                <p class="upload-hint">Supports MP3, WAV, M4A, OGG, FLAC</p>
+            </div>
+            <input type="file" id="fileInput" accept="audio/*">
+        </div>
+
+        <!-- Waveform Section -->
+        <div class="card hidden" id="waveformSection">
+            <div class="card-title">Waveform</div>
+            <div class="waveform-container">
+                <canvas id="waveformCanvas"></canvas>
+                <div class="waveform-time" id="waveformTime">0:00</div>
+            </div>
+            <div class="file-info" id="fileInfo" style="margin-top: 1rem;">
+                <span class="filename" id="fileName"></span>
+                <span class="duration" id="fileDuration"></span>
+            </div>
+        </div>
+
+        <!-- Controls Section -->
+        <div class="card hidden" id="controlsSection">
+            <div class="controls-row">
+                <select id="modelSelect" class="pill-select">
+                    <option value="tiny">Tiny</option>
+                    <option value="base">Base</option>
+                    <option value="small" selected>Small</option>
+                    <option value="medium">Medium</option>
+                    <option value="large-v3">Large v3</option>
+                </select>
+
+                <select id="langSelect" class="pill-select">
+                    <option value="en">English</option>
+                    <option value="fr">French</option>
+                    <option value="de">German</option>
+                    <option value="es">Spanish</option>
+                    <option value="it">Italian</option>
+                    <option value="pt">Portuguese</option>
+                    <option value="nl">Dutch</option>
+                    <option value="pl">Polish</option>
+                    <option value="ru">Russian</option>
+                    <option value="zh">Chinese</option>
+                    <option value="ja">Japanese</option>
+                    <option value="ko">Korean</option>
+                </select>
+
+                <span class="spacer"></span>
+
+                <button id="transcribeBtn" class="pill-button primary">Transcribe</button>
+            </div>
+        </div>
+
+        <!-- Words Section -->
+        <div class="card hidden" id="wordsSection">
+            <div class="card-title">Words <span id="wordCount"></span></div>
+            <div class="words-container" id="wordsContainer">
+                <div class="empty-state">Click Transcribe to detect words</div>
+            </div>
+        </div>
+
+        <!-- Segments Section -->
+        <div class="card hidden" id="segmentsSection">
+            <div class="card-title">Merged Segments</div>
+            <div class="segments-list" id="segmentsList">
+                <div class="empty-state">No segments yet</div>
+            </div>
+        </div>
+
+        <!-- Export Section -->
+        <div class="card hidden" id="exportSection">
+            <div class="card-title">Export</div>
+            <div class="export-row">
+                <div class="gap-slider">
+                    <label>Max gap:</label>
+                    <input type="range" id="maxGapSlider" min="100" max="1000" value="300" step="50">
+                    <span class="gap-value" id="maxGapValue">300ms</span>
+                </div>
+
+                <select id="formatSelect" class="pill-select">
+                    <option value="wav">WAV</option>
+                    <option value="mp3">MP3</option>
+                </select>
+
+                <span class="spacer"></span>
+
+                <div class="stats" id="stats">
+                    <span>Original: <span class="stat-value" id="originalDuration">0:00</span></span>
+                    <span>Cleaned: <span class="stat-value" id="cleanedDuration">0:00</span></span>
+                    <span>Saved: <span class="stat-value" id="savedPercent">0%</span></span>
+                </div>
+
+                <button id="exportBtn" class="pill-button success">Export Cleaned Audio</button>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Elements
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+        const waveformSection = document.getElementById('waveformSection');
+        const waveformCanvas = document.getElementById('waveformCanvas');
+        const waveformTime = document.getElementById('waveformTime');
+        const fileName = document.getElementById('fileName');
+        const fileDuration = document.getElementById('fileDuration');
+        const controlsSection = document.getElementById('controlsSection');
+        const modelSelect = document.getElementById('modelSelect');
+        const langSelect = document.getElementById('langSelect');
+        const transcribeBtn = document.getElementById('transcribeBtn');
+        const wordsSection = document.getElementById('wordsSection');
+        const wordsContainer = document.getElementById('wordsContainer');
+        const wordCount = document.getElementById('wordCount');
+        const segmentsSection = document.getElementById('segmentsSection');
+        const segmentsList = document.getElementById('segmentsList');
+        const exportSection = document.getElementById('exportSection');
+        const maxGapSlider = document.getElementById('maxGapSlider');
+        const maxGapValue = document.getElementById('maxGapValue');
+        const formatSelect = document.getElementById('formatSelect');
+        const exportBtn = document.getElementById('exportBtn');
+        const originalDuration = document.getElementById('originalDuration');
+        const cleanedDuration = document.getElementById('cleanedDuration');
+        const savedPercent = document.getElementById('savedPercent');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+
+        // State
+        let audioId = null;
+        let audioDuration = 0;
+        let peaks = [];
+        let words = [];
+
+        // Utilities
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function setStatus(state, message) {
+            statusDot.className = 'status-dot ' + state;
+            statusText.textContent = message;
+        }
+
+        // Cookie utilities for preferences
+        function setCookie(name, value, days = 365) {
+            const expires = new Date(Date.now() + days * 864e5).toUTCString();
+            document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Lax`;
+        }
+
+        function getCookie(name) {
+            const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+            return match ? decodeURIComponent(match[2]) : null;
+        }
+
+        function loadPreferences() {
+            const savedModel = getCookie('cleaner_model');
+            const savedLang = getCookie('cleaner_lang');
+            const savedFormat = getCookie('cleaner_format');
+            const savedGap = getCookie('cleaner_gap');
+
+            if (savedModel) modelSelect.value = savedModel;
+            if (savedLang) langSelect.value = savedLang;
+            if (savedFormat) formatSelect.value = savedFormat;
+            if (savedGap) {
+                maxGapSlider.value = savedGap;
+                maxGapValue.textContent = savedGap + 'ms';
+            }
+        }
+
+        // Waveform drawing
+        function drawWaveform() {
+            const ctx = waveformCanvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+            const rect = waveformCanvas.getBoundingClientRect();
+
+            waveformCanvas.width = rect.width * dpr;
+            waveformCanvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+
+            const width = rect.width;
+            const height = rect.height;
+            const centerY = height / 2;
+            const barWidth = Math.max(1, width / peaks.length);
+
+            ctx.clearRect(0, 0, width, height);
+
+            // Get kept time ranges
+            const keptRanges = getKeptTimeRanges();
+
+            // Draw bars
+            for (let i = 0; i < peaks.length; i++) {
+                const x = (i / peaks.length) * width;
+                const peakHeight = peaks[i] * (height * 0.8);
+                const time = (i / peaks.length) * audioDuration;
+
+                // Check if this time is in a kept range
+                const isKept = keptRanges.some(r => time >= r.start && time <= r.end);
+
+                ctx.fillStyle = isKept ? '#22c55e' : '#334155';
+                ctx.fillRect(x, centerY - peakHeight / 2, Math.max(1, barWidth - 1), peakHeight);
+            }
+
+            waveformTime.textContent = formatTime(audioDuration);
+        }
+
+        function getKeptTimeRanges() {
+            const kept = words.filter(w => !w.discarded);
+            if (kept.length === 0) return [];
+
+            const maxGap = parseInt(maxGapSlider.value) / 1000;
+            const ranges = [];
+            let current = { start: kept[0].start, end: kept[0].end };
+
+            for (let i = 1; i < kept.length; i++) {
+                if (kept[i].start - current.end <= maxGap) {
+                    current.end = kept[i].end;
+                } else {
+                    ranges.push(current);
+                    current = { start: kept[i].start, end: kept[i].end };
+                }
+            }
+            ranges.push(current);
+            return ranges;
+        }
+
+        // Word rendering
+        function renderWords() {
+            if (words.length === 0) {
+                wordsContainer.innerHTML = '<div class="empty-state">Click Transcribe to detect words</div>';
+                return;
+            }
+
+            const keptCount = words.filter(w => !w.discarded).length;
+            wordCount.textContent = `(${keptCount}/${words.length} kept)`;
+
+            wordsContainer.innerHTML = words.map((w, i) => {
+                const classes = ['word-chip'];
+                if (w.discarded) classes.push('discarded');
+                if (w.is_filler) classes.push('filler');
+
+                const displayWord = w.word.length > 12 ? w.word.substring(0, 10) + '...' : w.word;
+                const tooltip = w.word.length > 12 ? `data-tooltip="${w.word}"` : '';
+
+                return `
+                    <div class="${classes.join(' ')}" data-index="${i}" ${tooltip}>
+                        <span class="word-text">${displayWord}</span>
+                        <span class="word-time">${w.start.toFixed(2)}s</span>
+                    </div>
+                `;
+            }).join('');
+
+            // Add click handlers
+            wordsContainer.querySelectorAll('.word-chip').forEach(chip => {
+                chip.addEventListener('click', () => {
+                    const index = parseInt(chip.dataset.index);
+                    words[index].discarded = !words[index].discarded;
+                    renderWords();
+                    renderSegments();
+                    drawWaveform();
+                    updateStats();
+                });
+            });
+        }
+
+        // Segment rendering
+        function renderSegments() {
+            const kept = words.filter(w => !w.discarded);
+            if (kept.length === 0) {
+                segmentsList.innerHTML = '<div class="empty-state">No segments to keep</div>';
+                return;
+            }
+
+            const maxGap = parseInt(maxGapSlider.value) / 1000;
+            const segments = [];
+            let current = { start: kept[0].start, end: kept[0].end, words: [kept[0].word] };
+
+            for (let i = 1; i < kept.length; i++) {
+                if (kept[i].start - current.end <= maxGap) {
+                    current.end = kept[i].end;
+                    current.words.push(kept[i].word);
+                } else {
+                    segments.push(current);
+                    current = { start: kept[i].start, end: kept[i].end, words: [kept[i].word] };
+                }
+            }
+            segments.push(current);
+
+            segmentsList.innerHTML = segments.map(seg => `
+                <div class="segment-card">
+                    <div class="segment-time">${formatTime(seg.start)} - ${formatTime(seg.end)}</div>
+                    <div class="segment-text">${seg.words.join(' ')}</div>
+                </div>
+            `).join('');
+        }
+
+        // Stats update
+        function updateStats() {
+            const kept = words.filter(w => !w.discarded);
+            if (kept.length === 0) {
+                cleanedDuration.textContent = '0:00';
+                savedPercent.textContent = '100%';
+                return;
+            }
+
+            // Calculate cleaned duration (sum of segment durations + gaps)
+            const maxGap = parseInt(maxGapSlider.value) / 1000;
+            let cleanedTime = 0;
+            let prevEnd = null;
+
+            for (const w of kept) {
+                if (prevEnd !== null) {
+                    const gap = w.start - prevEnd;
+                    if (gap > maxGap) {
+                        cleanedTime += maxGap; // Insert silence
+                    } else {
+                        cleanedTime += gap;
+                    }
+                }
+                cleanedTime += (w.end - w.start);
+                prevEnd = w.end;
+            }
+
+            originalDuration.textContent = formatTime(audioDuration);
+            cleanedDuration.textContent = formatTime(cleanedTime);
+
+            const saved = ((audioDuration - cleanedTime) / audioDuration * 100).toFixed(1);
+            savedPercent.textContent = saved + '%';
+        }
+
+        // Upload handling
+        async function handleUpload(file) {
+            if (!file) return;
+
+            setStatus('loading', 'Uploading...');
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    setStatus('error', data.error);
+                    return;
+                }
+
+                audioId = data.audio_id;
+                audioDuration = data.duration;
+                peaks = data.peaks;
+                words = [];
+
+                // Update UI
+                uploadZone.classList.add('has-file');
+                uploadZone.innerHTML = `
+                    <div class="file-info">
+                        <span class="filename">${data.filename}</span>
+                        <span class="duration">${formatTime(audioDuration)}</span>
+                    </div>
+                `;
+
+                fileName.textContent = data.filename;
+                fileDuration.textContent = formatTime(audioDuration);
+
+                waveformSection.classList.remove('hidden');
+                controlsSection.classList.remove('hidden');
+                wordsSection.classList.add('hidden');
+                segmentsSection.classList.add('hidden');
+                exportSection.classList.add('hidden');
+
+                drawWaveform();
+                setStatus('ready', 'Ready to transcribe');
+
+            } catch (err) {
+                console.error('Upload error:', err);
+                setStatus('error', 'Upload failed');
+            }
+        }
+
+        // Transcribe
+        async function handleTranscribe() {
+            if (!audioId) return;
+
+            setStatus('loading', 'Transcribing...');
+            transcribeBtn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('audio_id', audioId);
+            formData.append('language', langSelect.value);
+            formData.append('model', modelSelect.value);
+
+            try {
+                const response = await fetch('/transcribe', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    setStatus('error', data.error);
+                    transcribeBtn.disabled = false;
+                    return;
+                }
+
+                // Mark fillers as discarded by default
+                words = data.words.map(w => ({
+                    ...w,
+                    discarded: w.is_filler,
+                }));
+
+                wordsSection.classList.remove('hidden');
+                segmentsSection.classList.remove('hidden');
+                exportSection.classList.remove('hidden');
+
+                renderWords();
+                renderSegments();
+                drawWaveform();
+                updateStats();
+
+                setStatus('ready', `Found ${words.length} words`);
+
+            } catch (err) {
+                console.error('Transcribe error:', err);
+                setStatus('error', 'Transcription failed');
+            } finally {
+                transcribeBtn.disabled = false;
+            }
+        }
+
+        // Export
+        async function handleExport() {
+            if (!audioId || words.length === 0) return;
+
+            const kept = words.filter(w => !w.discarded);
+            if (kept.length === 0) {
+                setStatus('error', 'No words to export');
+                return;
+            }
+
+            setStatus('loading', 'Exporting...');
+            exportBtn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('audio_id', audioId);
+            formData.append('segments', JSON.stringify(kept));
+            formData.append('max_gap', (parseInt(maxGapSlider.value) / 1000).toString());
+            formData.append('format', formatSelect.value);
+
+            try {
+                const response = await fetch('/export', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    const data = await response.json();
+                    setStatus('error', data.error || 'Export failed');
+                    return;
+                }
+
+                // Download the file
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+
+                // Get filename from Content-Disposition header
+                const disposition = response.headers.get('Content-Disposition');
+                const match = disposition?.match(/filename="(.+)"/);
+                a.download = match ? match[1] : `cleaned.${formatSelect.value}`;
+
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                setStatus('ready', 'Export complete');
+
+            } catch (err) {
+                console.error('Export error:', err);
+                setStatus('error', 'Export failed');
+            } finally {
+                exportBtn.disabled = false;
+            }
+        }
+
+        // Event listeners
+        uploadZone.addEventListener('click', () => fileInput.click());
+
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('dragover');
+        });
+
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('audio/')) {
+                handleUpload(file);
+            }
+        });
+
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files[0]) {
+                handleUpload(fileInput.files[0]);
+            }
+        });
+
+        transcribeBtn.addEventListener('click', handleTranscribe);
+        exportBtn.addEventListener('click', handleExport);
+
+        maxGapSlider.addEventListener('input', () => {
+            maxGapValue.textContent = maxGapSlider.value + 'ms';
+            setCookie('cleaner_gap', maxGapSlider.value);
+            renderSegments();
+            drawWaveform();
+            updateStats();
+        });
+
+        modelSelect.addEventListener('change', () => setCookie('cleaner_model', modelSelect.value));
+        langSelect.addEventListener('change', () => setCookie('cleaner_lang', langSelect.value));
+        formatSelect.addEventListener('change', () => setCookie('cleaner_format', formatSelect.value));
+
+        // Handle window resize for waveform
+        window.addEventListener('resize', () => {
+            if (peaks.length > 0) drawWaveform();
+        });
+
+        // Initialize
+        loadPreferences();
+    </script>
+</body>
+
+</html>
